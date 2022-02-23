@@ -1,6 +1,6 @@
 LIBBPF = ../libbpf
 CFLAGS = -Wall -ggdb
-INCLUDES = -I../.local_libbpf/ -I../includes/ -I$(LIBBPF)/src/ -I. -I$(LIBBPF)/include/uapi/
+INCLUDES = -I../.local_libbpf/ -I../includes/ -I$(LIBBPF)/src/ -I. -I../kernel-collector/includes/ -I$(LIBBPF)/include/uapi/
 CLANG ?= clang 
 LLVM_STRIP ?= llvm-strip
 OUTPUT = tests/
@@ -55,10 +55,6 @@ $(APPS): %: %.o
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
 compress: $(APPS)
-	tar -cf ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar ../includes/*skel.h
-	if [ "$${DEBUG:-0}" -eq 1 ]; then tar -uvf ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar ../tools/check-kernel-core.sh; fi
-	xz -f ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar
-	( cd ../artifacts; sha256sum netdata_ebpf-CO-RE-$(_LIBC).tar.xz > netdata_ebpf-CO-RE-$(_LIBC).tar.xz.sha256sum )
 
 clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz
