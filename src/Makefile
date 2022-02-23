@@ -55,7 +55,7 @@ $(APPS): %: %.o
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
 compress: $(APPS)
-	tar -cf ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar ../includes/*
+	tar -cf ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar ../includes/*skel.h
 	if [ "$${DEBUG:-0}" -eq 1 ]; then tar -uvf ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar ../tools/check-kernel-core.sh; fi
 	xz -f ../artifacts/netdata_ebpf-CO-RE-$(_LIBC).tar
 	( cd ../artifacts; sha256sum netdata_ebpf-CO-RE-$(_LIBC).tar.xz > netdata_ebpf-CO-RE-$(_LIBC).tar.xz.sha256sum )
@@ -65,4 +65,4 @@ clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz.sha256sum
 	cd $(LIBBPF)/src/ && make clean
 	cd $(OUTPUT) && find . -type f ! -name '*.sh' ! -name '.git*'  -delete
-	rm -f *.o ../includes/*
+	rm -f *.o 
