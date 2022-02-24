@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download upload_url
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v2.1.0
         with:
           name: upload_url
       - name: Set upload_url
@@ -91,7 +91,7 @@ jobs:
         run: |
           echo "RELEASE_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
       - name: Download all Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v2.1.0
         with:
           path: artifacts
       - name: Display Artifacts
