@@ -100,7 +100,7 @@ jobs:
       - name: Package Release Assets
         run: |
           mkdir -p "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}"
-          for dir in artifacts/artifacts-*-glibc; do
+          for dir in artifacts/artifacts-*; do
               tar -C "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}" -xvf "${dir}/*.tar.xz"
           done
           tar -C "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}" -Jcvf "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}.tar.xz" ./
