@@ -102,9 +102,9 @@ jobs:
           mkdir -p "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}"
           for libc in glibc; do
             for dir in artifacts/artifacts-*-"$libc"; do
-              tar -C packages/netdata-kernel-collector-"$libc"-${RELEASE_TAG} -xvf "$dir"/*.tar.xz
+              tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -xvf "$dir"/*.tar.xz
             done
-            tar -C packages/netdata-kernel-collector-"$libc"-${RELEASE_TAG} -Jcvf packages/netdata-kernel-collector-"$libc"-${RELEASE_TAG}.tar.xz ./
+            tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -Jcvf packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG}.tar.xz ./
           done
           cd packages && sha256sum *.tar.xz > sha256sums.txt
       - name: Display Release Assets
