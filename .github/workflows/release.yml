@@ -53,9 +53,7 @@ jobs:
           mkdir -p final-artifacts
           mkdir -p "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}"
           for libc in glibc; do
-            for dir in artifacts/artifacts-*-"$libc"; do
-              tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -xvf "$dir"/*.tar.xz
-            done
+            tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -xvf artifacts/*.tar.xz
             tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -Jcvf final-artifacts/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG}.tar.xz ./
           done
           cd final-artifacts && sha256sum *.tar.xz > sha256sums.txt
