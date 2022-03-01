@@ -48,11 +48,14 @@ jobs:
         with:
           name: artifacts
           path: artifacts
+      - name: Set release_tag
+        run: |
+          echo "RELEASE_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
       - name: Consolidate Artifacts
         run: |
           mkdir -p final-artifacts
-          mkdir -p "packages/netdata-ebpf-co-re-glibc-${RELEASE_TAG}"
           for libc in glibc; do
+            mkdir -p "packages/netdata-ebpf-co-re-${libc}-${RELEASE_TAG}"
             tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -xvf artifacts/*.tar.xz
             tar -C packages/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG} -Jcvf final-artifacts/netdata-ebpf-co-re-"$libc"-${RELEASE_TAG}.tar.xz ./
           done
@@ -62,14 +65,6 @@ jobs:
         with:
           allowUpdates: false
           artifactErrorsFailBuild: true
-          artifacts: 'final-artifacts/sha256sums.txt,final-artifacts/netdata-*.tar.xz'
+          artifacts: 'final-artifacts/*'
           draft: true
           token: ${{ secrets.NETDATABOT_GITHUB_TOKEN }}
-          body: |
-            # Release ${{ github.ref }}
-
-            <!--- Summary of Release -->
-
-            ## Release Notes
-
-            <!--- Release Notes -->
