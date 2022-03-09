@@ -474,12 +474,21 @@ int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
 }
 
 SEC("kretprobe/tcp_v4_connect")
-int BPF_KRETPROBE(netdata_tcp_v4_connect)
+int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
     return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+}
+
+SEC("kretprobe/tcp_v6_connect")
+int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
+{
+    int ret = (int)PT_REGS_RC(ctx);
+
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 6);
 }
 
 SEC("kprobe/tcp_retransmit_skb")
@@ -593,6 +602,20 @@ SEC("fentry/inet_csk_accept")
 int BPF_PROG(netdata_inet_csk_accept_fentry, struct sock *sk)
 {
     return netdata_common_inet_csk_accept(sk);
+}
+
+SEC("fexit/tcp_v4_connect")
+int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+{
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+}
+
+SEC("fexit/tcp_v6_connect")
+int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+{
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV6, 6);
 }
 
 SEC("fentry/tcp_retransmit_skb")

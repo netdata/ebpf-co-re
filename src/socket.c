@@ -22,7 +22,9 @@ char *function_list[] = { "inet_csk_accept",
                           "tcp_close",
                           "udp_recvmsg",
                           "tcp_sendmsg",
-                          "udp_sendmsg" };
+                          "udp_sendmsg",
+                          "tcp_v4_connect",
+                          "tcp_v6_connect"};
 
 #define NETDATA_IPV4 4
 #define NETDATA_IPV6 6
@@ -32,6 +34,18 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
     obj->links.netdata_inet_csk_accept_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_inet_csk_accept_kretprobe,
                                                                               true, function_list[NETDATA_FCNT_INET_CSK_ACCEPT]);
     int ret = libbpf_get_error(obj->links.netdata_inet_csk_accept_kretprobe);
+    if (ret)
+        return -1;
+
+    obj->links.netdata_tcp_v4_connect_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_v4_connect_kretprobe,
+                                                                             true, function_list[NETDATA_FCNT_TCP_V4_CONNECT]);
+    ret = libbpf_get_error(obj->links.netdata_tcp_v4_connect_kretprobe);
+    if (ret)
+        return -1;
+
+    obj->links.netdata_tcp_v6_connect_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_v6_connect_kretprobe,
+                                                                             true, function_list[NETDATA_FCNT_TCP_V6_CONNECT]);
+    ret = libbpf_get_error(obj->links.netdata_tcp_v6_connect_kretprobe);
     if (ret)
         return -1;
 
@@ -95,11 +109,15 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
 static void ebpf_disable_probes(struct socket_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_inet_csk_accept_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_v4_connect_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_v6_connect_kretprobe, false);
 }
 
 static void ebpf_disable_trampoline(struct socket_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_inet_csk_accept_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_v4_connect_fexit, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_v6_connect_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_close_fentry, false);
@@ -114,6 +132,12 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
 {
     bpf_program__set_attach_target(obj->progs.netdata_inet_csk_accept_fentry, 0,
                                    function_list[NETDATA_FCNT_INET_CSK_ACCEPT]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_tcp_v4_connect_fexit, 0,
+                                   function_list[NETDATA_FCNT_TCP_V4_CONNECT]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_tcp_v6_connect_fexit, 0,
+                                   function_list[NETDATA_FCNT_TCP_V6_CONNECT]);
 
     bpf_program__set_attach_target(obj->progs.netdata_tcp_retransmit_skb_fentry, 0,
                                    function_list[NETDATA_FCNT_TCP_RETRANSMIT]);
