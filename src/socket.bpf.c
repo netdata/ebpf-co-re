@@ -55,9 +55,9 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, __u16);
-    __type(value, __u8);
-    __uint(max_entries, 65536);
+    __type(key, netdata_passive_connection_idx_t);
+    __type(value, netdata_passive_connection_t);
+    __uint(max_entries, 1024);
 } tbl_lports SEC(".maps");
 
 struct {
@@ -305,12 +305,31 @@ static inline int netdata_common_inet_csk_accept(struct sock *sk)
     if (!sk)
         return 0;
 
-    __u16 dport = BPF_CORE_READ(sk, __sk_common.skc_num);
+    netdata_passive_connection_t data = { };
+    netdata_passive_connection_idx_t idx = { };
 
-    __u8 *value = (__u8 *)bpf_map_lookup_elem(&tbl_lports, &dport);
-    if (!value) {
-        __u8 value = 1;
-        bpf_map_update_elem(&tbl_lports, &dport, &value, BPF_ANY);
+    __u16 protocol = BPF_CORE_READ(sk, sk_protocol);
+    if (protocol != IPPROTO_TCP && protocol != IPPROTO_UDP)
+        return 0;
+
+    idx.port = BPF_CORE_READ(sk, __sk_common.skc_num);
+    idx.protocol = protocol;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = (__u32)(pid_tgid >> 32);
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+
+    netdata_passive_connection_t *value = (netdata_passive_connection_t *)bpf_map_lookup_elem(&tbl_lports, &idx);
+    if (value) {
+        // Update PID, because process can die.
+        value->tgid = tgid;
+        value->pid = pid;
+        libnetdata_update_u64(&value->counter, 1);
+    } else {
+        data.tgid = tgid;
+        data.pid = pid;
+        data.counter = 1;
+        bpf_map_update_elem(&tbl_lports, &idx, &data, BPF_ANY);
     }
 
     return 0;

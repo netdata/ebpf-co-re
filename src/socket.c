@@ -204,8 +204,8 @@ static inline int update_socket_tables(int fd, netdata_socket_idx_t *idx, netdat
 
 static inline int update_local_ports(struct socket_bpf *obj)
 {
-    uint16_t idx = 1;
-    uint8_t value = 1;
+    netdata_passive_connection_idx_t idx = { .protocol = 6, .port = 44444 };
+    netdata_passive_connection_t value = { .tgid = 1, .pid = 1, .counter = 1 };
     int fd = bpf_map__fd(obj->maps.tbl_lports);
     int ret = bpf_map_update_elem(fd, &idx, &value, 0);
     if (ret)
@@ -292,11 +292,11 @@ static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj
 
 static int netdata_read_local_ports(struct socket_bpf *obj)
 {
-    uint16_t idx = 1;
-    uint8_t value = 0;
+    netdata_passive_connection_idx_t idx = { .protocol = 6, .port = 44444 };
+    netdata_passive_connection_t value = { .tgid = 0, .pid = 0, .counter = 0 };
     int fd = bpf_map__fd(obj->maps.tbl_lports);
     if (!bpf_map_lookup_elem(fd, &idx, &value)) {
-        if (value)
+        if (value.counter)
             return 0;
     }
 
