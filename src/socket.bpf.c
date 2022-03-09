@@ -171,6 +171,47 @@ static __always_inline void ebpf_socket_reset_bandwidth(__u32 pid, __u32 tgid)
     bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
 }
 
+static __always_inline void update_pid_connection(__u8 version)
+{
+    netdata_bandwidth_t *stored;
+    netdata_bandwidth_t data = { };
+
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return;
+    } else
+        return;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+    key = (__u32)(pid_tgid >> 32);
+
+    stored = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &key);
+    if (stored) {
+        if (stored->pid != tgid)
+            ebpf_socket_reset_bandwidth(key, tgid);
+
+        stored->ct = bpf_ktime_get_ns();
+
+        if (version == 4)
+            libnetdata_update_u32(&stored->ipv4_connect, 1);
+        else
+            libnetdata_update_u32(&stored->ipv6_connect, 1);
+    } else {
+        data.pid = tgid;
+        data.first = bpf_ktime_get_ns();
+        data.ct = data.first;
+        if (version == 4)
+            data.ipv4_connect = 1;
+        else
+            data.ipv6_connect = 1;
+
+        bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
+    }
+}
+
 static __always_inline void update_pid_cleanup()
 {
     netdata_bandwidth_t *b;
@@ -403,6 +444,21 @@ static inline int netdata_common_udp_recvmsg(struct sock *sk)
     return 0;
 }
 
+static inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
+                                             enum socket_counters err, __u8 version)
+{
+    libnetdata_update_global(&tbl_global_sock, success, 1);
+
+    if (ret < 0) {
+        libnetdata_update_global(&tbl_global_sock, err, 1);
+        return 0;
+    }
+
+    update_pid_connection(version);
+
+    return 0;
+}
+
 /***********************************************************************************
  *
  *                             SOCKET SECTION(kprobe)
@@ -415,6 +471,15 @@ int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
     struct sock *sk = (struct sock*)PT_REGS_RC(ctx);
 
     return netdata_common_inet_csk_accept(sk);
+}
+
+SEC("kretprobe/tcp_v4_connect")
+int BPF_KRETPROBE(netdata_tcp_v4_connect)
+{
+    int ret = (int)PT_REGS_RC(ctx);
+
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
 }
 
 SEC("kprobe/tcp_retransmit_skb")
