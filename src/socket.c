@@ -23,6 +23,7 @@ char *function_list[] = { "inet_csk_accept",
                           "udp_recvmsg",
                           "tcp_sendmsg",
                           "udp_sendmsg",
+                          "__kfree_skb",
                           "tcp_v4_connect",
                           "tcp_v6_connect"};
 
@@ -64,6 +65,12 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
     obj->links.netdata_tcp_close_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_close_kprobe,
                                                                      false, function_list[NETDATA_FCNT_TCP_CLOSE]);
     ret = libbpf_get_error(obj->links.netdata_tcp_close_kprobe);
+    if (ret)
+        return -1;
+
+    obj->links.netdata_tcp_drop_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_drop_kprobe,
+                                                                     false, function_list[NETDATA_FCNT_TCP_DROP]);
+    ret = libbpf_get_error(obj->links.netdata_tcp_drop_kprobe);
     if (ret)
         return -1;
 
@@ -121,6 +128,7 @@ static void ebpf_disable_trampoline(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_close_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_drop_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fexit, false);
@@ -147,6 +155,9 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_tcp_close_fentry, 0,
                                    function_list[NETDATA_FCNT_TCP_CLOSE]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_tcp_drop_fentry, 0,
+                                   function_list[NETDATA_FCNT_TCP_DROP]);
 
     bpf_program__set_attach_target(obj->progs.netdata_udp_recvmsg_fentry, 0,
                                    function_list[NETDATA_FCNT_UDP_RECEVMSG]);

@@ -212,10 +212,18 @@ static __always_inline void update_pid_connection(__u8 version)
     }
 }
 
-static __always_inline void update_pid_cleanup()
+static __always_inline void update_pid_cleanup(__u64 drop, __u64 close)
 {
     netdata_bandwidth_t *b;
     netdata_bandwidth_t data = { };
+
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return;
+    } else
+        return;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tgid >> 32);
@@ -226,12 +234,18 @@ static __always_inline void update_pid_cleanup()
         if (b->pid != tgid)
             ebpf_socket_reset_bandwidth(pid, tgid);
 
-        libnetdata_update_u64(&b->close, 1);
+        if (drop)
+            libnetdata_update_u64(&b->drop, 1);
+        else
+            libnetdata_update_u64(&b->close, 1);
     } else {
         data.pid = tgid;
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        data.close = 1;
+        if (drop)
+            data.drop = 1;
+        else
+            data.close = 1;
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
     }
@@ -412,14 +426,10 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     netdata_socket_t *val;
     __u16 family;
     netdata_socket_idx_t idx = { };
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_CLOSE, 1);
 
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps)
-        if (*apps == 1)
-            update_pid_cleanup();
+    update_pid_cleanup(0, 1);
 
     family =  set_idx_value(&idx, is);
     if (!family)
@@ -430,6 +440,22 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     if (val) {
         bpf_map_delete_elem(tbl, &idx);
     }
+
+    return 0;
+}
+
+static inline int netdata_common_tcp_drop(struct sk_buff *skb)
+{
+    __u16 protocol;
+    struct sock *sk = BPF_CORE_READ(skb, sk);
+    BPF_CORE_READ_INTO(&protocol, sk, sk_protocol);
+
+    if (protocol != IPPROTO_TCP)
+        return 0;
+
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_DROP, 1);
+
+    update_pid_cleanup(1, 0);
 
     return 0;
 }
@@ -516,6 +542,14 @@ int BPF_KPROBE(netdata_tcp_close_kprobe)
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
     return netdata_common_tcp_close(is);
+}
+
+SEC("kprobe/__kfree_skb")
+int BPF_KPROBE(netdata_tcp_drop_kprobe)
+{
+    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
+
+    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
@@ -642,6 +676,12 @@ int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return netdata_common_tcp_close(is);
+}
+
+SEC("fentry/__kfree_skb")
+int BPF_PROG(netdata_tcp_drop_fentry, struct sk_buff *skb)
+{
+    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
