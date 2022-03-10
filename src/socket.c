@@ -118,6 +118,17 @@ static void ebpf_disable_probes(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_inet_csk_accept_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_v4_connect_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_v6_connect_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_close_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_drop_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kprobe, false);
 }
 
 static void ebpf_disable_trampoline(struct socket_bpf *obj)
