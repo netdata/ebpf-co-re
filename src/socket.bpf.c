@@ -55,9 +55,9 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, __u16);
-    __type(value, __u8);
-    __uint(max_entries, 65536);
+    __type(key, netdata_passive_connection_idx_t);
+    __type(value, netdata_passive_connection_t);
+    __uint(max_entries, 1024);
 } tbl_lports SEC(".maps");
 
 struct {
@@ -171,10 +171,59 @@ static __always_inline void ebpf_socket_reset_bandwidth(__u32 pid, __u32 tgid)
     bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
 }
 
-static __always_inline void update_pid_cleanup()
+static __always_inline void update_pid_connection(__u8 version)
+{
+    netdata_bandwidth_t *stored;
+    netdata_bandwidth_t data = { };
+
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return;
+    } else
+        return;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+    key = (__u32)(pid_tgid >> 32);
+
+    stored = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &key);
+    if (stored) {
+        if (stored->pid != tgid)
+            ebpf_socket_reset_bandwidth(key, tgid);
+
+        stored->ct = bpf_ktime_get_ns();
+
+        if (version == 4)
+            libnetdata_update_u32(&stored->ipv4_connect, 1);
+        else
+            libnetdata_update_u32(&stored->ipv6_connect, 1);
+    } else {
+        data.pid = tgid;
+        data.first = bpf_ktime_get_ns();
+        data.ct = data.first;
+        if (version == 4)
+            data.ipv4_connect = 1;
+        else
+            data.ipv6_connect = 1;
+
+        bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
+    }
+}
+
+static __always_inline void update_pid_cleanup(__u64 drop, __u64 close)
 {
     netdata_bandwidth_t *b;
     netdata_bandwidth_t data = { };
+
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return;
+    } else
+        return;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tgid >> 32);
@@ -185,12 +234,18 @@ static __always_inline void update_pid_cleanup()
         if (b->pid != tgid)
             ebpf_socket_reset_bandwidth(pid, tgid);
 
-        libnetdata_update_u64(&b->close, 1);
+        if (drop)
+            libnetdata_update_u64(&b->drop, 1);
+        else
+            libnetdata_update_u64(&b->close, 1);
     } else {
         data.pid = tgid;
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        data.close = 1;
+        if (drop)
+            data.drop = 1;
+        else
+            data.close = 1;
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
     }
@@ -305,12 +360,31 @@ static inline int netdata_common_inet_csk_accept(struct sock *sk)
     if (!sk)
         return 0;
 
-    __u16 dport = BPF_CORE_READ(sk, __sk_common.skc_num);
+    netdata_passive_connection_t data = { };
+    netdata_passive_connection_idx_t idx = { };
 
-    __u8 *value = (__u8 *)bpf_map_lookup_elem(&tbl_lports, &dport);
-    if (!value) {
-        __u8 value = 1;
-        bpf_map_update_elem(&tbl_lports, &dport, &value, BPF_ANY);
+    __u16 protocol = BPF_CORE_READ(sk, sk_protocol);
+    if (protocol != IPPROTO_TCP && protocol != IPPROTO_UDP)
+        return 0;
+
+    idx.port = BPF_CORE_READ(sk, __sk_common.skc_num);
+    idx.protocol = protocol;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = (__u32)(pid_tgid >> 32);
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+
+    netdata_passive_connection_t *value = (netdata_passive_connection_t *)bpf_map_lookup_elem(&tbl_lports, &idx);
+    if (value) {
+        // Update PID, because process can die.
+        value->tgid = tgid;
+        value->pid = pid;
+        libnetdata_update_u64(&value->counter, 1);
+    } else {
+        data.tgid = tgid;
+        data.pid = pid;
+        data.counter = 1;
+        bpf_map_update_elem(&tbl_lports, &idx, &data, BPF_ANY);
     }
 
     return 0;
@@ -352,14 +426,10 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     netdata_socket_t *val;
     __u16 family;
     netdata_socket_idx_t idx = { };
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_CLOSE, 1);
 
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps)
-        if (*apps == 1)
-            update_pid_cleanup();
+    update_pid_cleanup(0, 1);
 
     family =  set_idx_value(&idx, is);
     if (!family)
@@ -374,12 +444,43 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     return 0;
 }
 
+static inline int netdata_common_tcp_drop(struct sk_buff *skb)
+{
+    __u16 protocol;
+    struct sock *sk = BPF_CORE_READ(skb, sk);
+    BPF_CORE_READ_INTO(&protocol, sk, sk_protocol);
+
+    if (protocol != IPPROTO_TCP)
+        return 0;
+
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_DROP, 1);
+
+    update_pid_cleanup(1, 0);
+
+    return 0;
+}
+
 static inline int netdata_common_udp_recvmsg(struct sock *sk)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
 
     bpf_map_update_elem(&tbl_nv_udp, &pid_tgid, &sk, BPF_ANY);
+
+    return 0;
+}
+
+static inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
+                                             enum socket_counters err, __u8 version)
+{
+    libnetdata_update_global(&tbl_global_sock, success, 1);
+
+    if (ret < 0) {
+        libnetdata_update_global(&tbl_global_sock, err, 1);
+        return 0;
+    }
+
+    update_pid_connection(version);
 
     return 0;
 }
@@ -396,6 +497,24 @@ int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
     struct sock *sk = (struct sock*)PT_REGS_RC(ctx);
 
     return netdata_common_inet_csk_accept(sk);
+}
+
+SEC("kretprobe/tcp_v4_connect")
+int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
+{
+    int ret = (int)PT_REGS_RC(ctx);
+
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+}
+
+SEC("kretprobe/tcp_v6_connect")
+int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
+{
+    int ret = (int)PT_REGS_RC(ctx);
+
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 6);
 }
 
 SEC("kprobe/tcp_retransmit_skb")
@@ -423,6 +542,14 @@ int BPF_KPROBE(netdata_tcp_close_kprobe)
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
     return netdata_common_tcp_close(is);
+}
+
+SEC("kprobe/__kfree_skb")
+int BPF_KPROBE(netdata_tcp_drop_kprobe)
+{
+    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
+
+    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
@@ -511,6 +638,20 @@ int BPF_PROG(netdata_inet_csk_accept_fentry, struct sock *sk)
     return netdata_common_inet_csk_accept(sk);
 }
 
+SEC("fexit/tcp_v4_connect")
+int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+{
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+}
+
+SEC("fexit/tcp_v6_connect")
+int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+{
+    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV6, 6);
+}
+
 SEC("fentry/tcp_retransmit_skb")
 int BPF_PROG(netdata_tcp_retransmit_skb_fentry, struct sock *sk)
 {
@@ -535,6 +676,12 @@ int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return netdata_common_tcp_close(is);
+}
+
+SEC("fentry/__kfree_skb")
+int BPF_PROG(netdata_tcp_drop_fentry, struct sk_buff *skb)
+{
+    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
