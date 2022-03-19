@@ -444,22 +444,6 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     return 0;
 }
 
-static inline int netdata_common_tcp_drop(struct sk_buff *skb)
-{
-    __u16 protocol;
-    struct sock *sk = BPF_CORE_READ(skb, sk);
-    BPF_CORE_READ_INTO(&protocol, sk, sk_protocol);
-
-    if (protocol != IPPROTO_TCP)
-        return 0;
-
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_DROP, 1);
-
-    update_pid_cleanup(1, 0);
-
-    return 0;
-}
-
 static inline int netdata_common_udp_recvmsg(struct sock *sk)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -542,14 +526,6 @@ int BPF_KPROBE(netdata_tcp_close_kprobe)
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
     return netdata_common_tcp_close(is);
-}
-
-SEC("kprobe/__kfree_skb")
-int BPF_KPROBE(netdata_tcp_drop_kprobe)
-{
-    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
-
-    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
@@ -676,12 +652,6 @@ int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return netdata_common_tcp_close(is);
-}
-
-SEC("fentry/__kfree_skb")
-int BPF_PROG(netdata_tcp_drop_fentry, struct sk_buff *skb)
-{
-    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
