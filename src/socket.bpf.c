@@ -471,6 +471,32 @@ static inline int netdata_common_tcp_connect(int ret, enum socket_counters succe
 
 /***********************************************************************************
  *
+ *                                CLEANUP COMMON
+ *
+ ***********************************************************************************/
+
+static inline int netdata_common_socket_cleanup()
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    key = (__u32)(pid_tgid >> 32);
+    netdata_bandwidth_t *removeme = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &key);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_bandwidth, &key);
+    }
+
+    return 0;
+}
+
+/***********************************************************************************
+ *
  *                             SOCKET SECTION(kprobe)
  *
  ***********************************************************************************/
@@ -604,6 +630,18 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 
 /***********************************************************************************
  *
+ *                             CLEANUP SECTION(kprobe)
+ *
+ ***********************************************************************************/
+
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_socket_release_task_kprobe)
+{
+    return netdata_common_socket_cleanup();
+}
+
+/***********************************************************************************
+ *
  *                             SOCKET SECTION(tracepoint)
  *
  ***********************************************************************************/
@@ -694,6 +732,18 @@ int BPF_PROG(netdata_udp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return common_udp_send_message(is, sent, ret);
+}
+
+/***********************************************************************************
+ *
+ *                             CLEANUP SECTION(kprobe)
+ *
+ ***********************************************************************************/
+
+SEC("fentry/release_task")
+int BPF_KPROBE(netdata_socket_release_task_fentry)
+{
+    return netdata_common_socket_cleanup();
 }
 
 char _license[] SEC("license") = "GPL";
