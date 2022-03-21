@@ -16,6 +16,7 @@
 
 #include "socket.skel.h"
 
+// Socket functions
 char *function_list[] = { "inet_csk_accept",
                           "tcp_retransmit_skb",
                           "tcp_cleanup_rbuf",
@@ -23,9 +24,10 @@ char *function_list[] = { "inet_csk_accept",
                           "udp_recvmsg",
                           "tcp_sendmsg",
                           "udp_sendmsg",
-                          "__kfree_skb",
                           "tcp_v4_connect",
                           "tcp_v6_connect"};
+
+#define NETDATA_CLEANUP_FUNCTIONS "release_task"
 
 #define NETDATA_IPV4 4
 #define NETDATA_IPV6 6
@@ -68,12 +70,6 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
     if (ret)
         return -1;
 
-    obj->links.netdata_tcp_drop_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_drop_kprobe,
-                                                                     false, function_list[NETDATA_FCNT_TCP_DROP]);
-    ret = libbpf_get_error(obj->links.netdata_tcp_drop_kprobe);
-    if (ret)
-        return -1;
-
     obj->links.netdata_udp_recvmsg_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_udp_recvmsg_kprobe,
                                                                        false, function_list[NETDATA_FCNT_UDP_RECEVMSG]);
     ret = libbpf_get_error(obj->links.netdata_udp_recvmsg_kprobe);
@@ -110,6 +106,12 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
     if (ret)
         return -1;
 
+    obj->links.netdata_socket_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_socket_release_task_kprobe,
+                                                                               false, NETDATA_CLEANUP_FUNCTIONS);
+    ret = libbpf_get_error(obj->links.netdata_socket_release_task_kprobe);
+    if (ret)
+        return -1;
+
     return 0;
 }
 
@@ -119,16 +121,15 @@ static void ebpf_disable_probes(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_v4_connect_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_v6_connect_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_close_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_tcp_drop_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_socket_release_task_kprobe, false);
 }
 
 static void ebpf_disable_trampoline(struct socket_bpf *obj)
@@ -139,12 +140,12 @@ static void ebpf_disable_trampoline(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_retransmit_skb_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_close_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_tcp_drop_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_fexit, false);
+    bpf_program__set_autoload(obj->progs.netdata_socket_release_task_fentry, false);
 }
 
 static void ebpf_set_trampoline_target(struct socket_bpf *obj)
@@ -167,9 +168,6 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
     bpf_program__set_attach_target(obj->progs.netdata_tcp_close_fentry, 0,
                                    function_list[NETDATA_FCNT_TCP_CLOSE]);
 
-    bpf_program__set_attach_target(obj->progs.netdata_tcp_drop_fentry, 0,
-                                   function_list[NETDATA_FCNT_TCP_DROP]);
-
     bpf_program__set_attach_target(obj->progs.netdata_udp_recvmsg_fentry, 0,
                                    function_list[NETDATA_FCNT_UDP_RECEVMSG]);
 
@@ -184,8 +182,10 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_udp_sendmsg_fexit, 0,
                                    function_list[NETDATA_FCNT_UDP_SENDMSG]);
-}
 
+    bpf_program__set_attach_target(obj->progs.netdata_socket_release_task_fentry, 0,
+                                   NETDATA_CLEANUP_FUNCTIONS);
+}
 
 static inline int ebpf_load_and_attach(struct socket_bpf *obj, int selector)
 {

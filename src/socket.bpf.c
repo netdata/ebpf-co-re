@@ -444,22 +444,6 @@ static inline int netdata_common_tcp_close(struct inet_sock *is)
     return 0;
 }
 
-static inline int netdata_common_tcp_drop(struct sk_buff *skb)
-{
-    __u16 protocol;
-    struct sock *sk = BPF_CORE_READ(skb, sk);
-    BPF_CORE_READ_INTO(&protocol, sk, sk_protocol);
-
-    if (protocol != IPPROTO_TCP)
-        return 0;
-
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_DROP, 1);
-
-    update_pid_cleanup(1, 0);
-
-    return 0;
-}
-
 static inline int netdata_common_udp_recvmsg(struct sock *sk)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -481,6 +465,32 @@ static inline int netdata_common_tcp_connect(int ret, enum socket_counters succe
     }
 
     update_pid_connection(version);
+
+    return 0;
+}
+
+/***********************************************************************************
+ *
+ *                                CLEANUP COMMON
+ *
+ ***********************************************************************************/
+
+static inline int netdata_common_socket_cleanup()
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    key = (__u32)(pid_tgid >> 32);
+    netdata_bandwidth_t *removeme = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &key);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_bandwidth, &key);
+    }
 
     return 0;
 }
@@ -542,14 +552,6 @@ int BPF_KPROBE(netdata_tcp_close_kprobe)
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
     return netdata_common_tcp_close(is);
-}
-
-SEC("kprobe/__kfree_skb")
-int BPF_KPROBE(netdata_tcp_drop_kprobe)
-{
-    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
-
-    return netdata_common_tcp_drop(skb);
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
@@ -628,6 +630,18 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 
 /***********************************************************************************
  *
+ *                             CLEANUP SECTION(kprobe)
+ *
+ ***********************************************************************************/
+
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_socket_release_task_kprobe)
+{
+    return netdata_common_socket_cleanup();
+}
+
+/***********************************************************************************
+ *
  *                             SOCKET SECTION(tracepoint)
  *
  ***********************************************************************************/
@@ -678,12 +692,6 @@ int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
     return netdata_common_tcp_close(is);
 }
 
-SEC("fentry/__kfree_skb")
-int BPF_PROG(netdata_tcp_drop_fentry, struct sk_buff *skb)
-{
-    return netdata_common_tcp_drop(skb);
-}
-
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
 SEC("fentry/udp_recvmsg")
 int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
@@ -724,6 +732,18 @@ int BPF_PROG(netdata_udp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return common_udp_send_message(is, sent, ret);
+}
+
+/***********************************************************************************
+ *
+ *                             CLEANUP SECTION(kprobe)
+ *
+ ***********************************************************************************/
+
+SEC("fentry/release_task")
+int BPF_KPROBE(netdata_socket_release_task_fentry)
+{
+    return netdata_common_socket_cleanup();
 }
 
 char _license[] SEC("license") = "GPL";
