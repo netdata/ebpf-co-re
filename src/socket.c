@@ -141,6 +141,7 @@ static void ebpf_disable_trampoline(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_cleanup_rbuf_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_close_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_udp_recvmsg_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_fentry, false);
@@ -169,6 +170,9 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
                                    function_list[NETDATA_FCNT_TCP_CLOSE]);
 
     bpf_program__set_attach_target(obj->progs.netdata_udp_recvmsg_fentry, 0,
+                                   function_list[NETDATA_FCNT_UDP_RECEVMSG]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_udp_recvmsg_fexit, 0,
                                    function_list[NETDATA_FCNT_UDP_RECEVMSG]);
 
     bpf_program__set_attach_target(obj->progs.netdata_tcp_sendmsg_fentry, 0,
