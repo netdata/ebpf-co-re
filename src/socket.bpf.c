@@ -454,6 +454,30 @@ static inline int netdata_common_udp_recvmsg(struct sock *sk)
     return 0;
 }
 
+static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 received)
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
+
+    struct sock **skpp = bpf_map_lookup_elem(&tbl_nv_udp, &pid_tgid);
+    if (skpp == 0) {
+        return 0;
+    }
+
+
+    bpf_map_delete_elem(&tbl_nv_udp, &pid_tgid);
+    update_socket_table(is, 0, received, 0, (__u16)IPPROTO_UDP);
+
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
+
+    update_pid_table(0, received, IPPROTO_UDP);
+
+
+    return 0;
+}
+
 static inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
                                              enum socket_counters err, __u8 version)
 {
@@ -566,27 +590,10 @@ int BPF_KPROBE(netdata_udp_recvmsg_kprobe)
 SEC("kretprobe/udp_recvmsg")
 int BPF_KRETPROBE(netdata_udp_recvmsg_kretprobe)
 {
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
-
-     struct sock **skpp = bpf_map_lookup_elem(&tbl_nv_udp, &pid_tgid);
-    if (skpp == 0) {
-        return 0;
-    }
-
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
-
-    bpf_map_delete_elem(&tbl_nv_udp, &pid_tgid);
     __u64 received = (__u64) PT_REGS_RC(ctx);
-    update_socket_table(is, 0, received, 0, (__u16)IPPROTO_UDP);
 
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
-
-    update_pid_table(0, received, IPPROTO_UDP);
-
-    return 0;
+    return netdata_common_udp_recvmsg_return(is, received);
 }
 
 SEC("kretprobe/tcp_sendmsg")
@@ -703,27 +710,10 @@ SEC("fexit/udp_recvmsg")
 int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len, int noblock,
 		int flags, int *addr_len, int ret)
 {
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
-
-    struct sock **skpp = bpf_map_lookup_elem(&tbl_nv_udp, &pid_tgid);
-    if (skpp == 0) {
-        return 0;
-    }
-
     struct inet_sock *is = (struct inet_sock *)(sk);
-
-    bpf_map_delete_elem(&tbl_nv_udp, &pid_tgid);
     __u64 received = (__u64) ret;
-    update_socket_table(is, 0, received, 0, (__u16)IPPROTO_UDP);
 
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
-
-    update_pid_table(0, received, IPPROTO_UDP);
-
-    return 0;
+    return netdata_common_udp_recvmsg_return(is, received);
 }
 
 SEC("fentry/tcp_sendmsg")
