@@ -466,14 +466,12 @@ static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 
         return 0;
     }
 
-
     bpf_map_delete_elem(&tbl_nv_udp, &pid_tgid);
     update_socket_table(is, 0, received, 0, (__u16)IPPROTO_UDP);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
     update_pid_table(0, received, IPPROTO_UDP);
-
 
     return 0;
 }
