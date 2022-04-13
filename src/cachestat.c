@@ -196,6 +196,8 @@ static int ebpf_cachestat_tests(int selector)
         fd = bpf_map__fd(obj->maps.cstat_global);
         int fd2 = bpf_map__fd(obj->maps.cstat_pid);
         pid_t my_pid = ebpf_update_tables(fd, fd2);
+
+        sleep(10);
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_CACHESTAT_END);
         if (!ret) {
             ret = cachestat_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
