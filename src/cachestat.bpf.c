@@ -44,9 +44,8 @@ static inline int netdata_cachetat_not_update_apps(__u32 idx)
 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u32 *apps = bpf_map_lookup_elem(&cstat_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    if (apps && *apps)
+        return 0;
 
     return 1;
 }
