@@ -8,13 +8,6 @@ concurrency:
 jobs:
   build-artifacts:
     name: Build Artifacts
-    strategy:
-      fail-fast: false
-      matrix:
-        kernel_version:
-          - '5.15.27'
-        libc:
-          - glibc
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,7 +17,7 @@ jobs:
       - name: Run build.sh
         run: |
           os=core
-          ./build.sh ${{ matrix.kernel_version }} ${{ matrix.libc }} "${os}"
+          ./build.sh 5.15.27 glibc "${os}"
       - name: List Artifacts
         run: |
           ls -lah artifacts
@@ -33,5 +26,50 @@ jobs:
         uses: actions/upload-artifact@v3
         if: success()
         with:
-          name: artifacts-${{ matrix.kernel_version }}-${{ matrix.libc }}
+          name: artifacts-5.15.27-glibc
           path: artifacts
+
+  test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: "oraclelinux8", url: "https://cache.netdata.cloud/vagrant/oraclelinux/oraclelinux8/oraclelinux8.json"}
+          - {name: "ubuntu2110", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/ubuntu2110.json"}
+    runs-on: macos-10.15
+    needs: build-artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Retrieve Dist Tarball
+        id: fetch-dist
+        uses: actions/download-artifact@v3
+        with:
+          name: artifacts-5.15.27-glibc
+          path: src/tests
+      - name: Update vagrant and virtualbox
+        run: |
+          ls -la src/tests/artifacts-5.15.27-glibc
+          brew upgrade vagrant
+          brew upgrade --cask virtualbox
+      - name: Create VM
+        uses: nick-invision/retry@v2
+        with:
+          timeout_seconds: 1200
+          max_attempts: 3
+          command: |
+            vagrant box add ${{ matrix.url }} --name ${{ matrix.name }}
+            vagrant destroy ${{ matrix.name }} -f || true
+            vagrant init ${{ matrix.name }} ${{ matrix.url }} --force
+            vagrant up
+      - name: Run Tests
+        run: |
+          cd src/tests
+          ls -la
+          ls -la artifacts-5.15.27-glibc
+#          tar -xzvf artifacts-5.15.27-glibc
+#          bash src/tests/run_tests.sh
+#          wget https://raw.githubusercontent.com/Ferroin/netdata/distro-test-keys/.github/data/distros.yml
