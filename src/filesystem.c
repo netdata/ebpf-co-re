@@ -279,7 +279,8 @@ static int ebpf_load_fs(int idx)
     if (obj) {
         ebpf_load_and_attach(obj, fd[idx].functions, fd[idx].name, fd[idx].bf);
         filesystem_bpf__destroy(obj);
-    }
+    } else
+        return 3;
 
     return 0;
 }
@@ -370,7 +371,8 @@ int main(int argc, char **argv)
     // run tests here
     if (!ret) {
         ret = ebpf_load_fs(fs);
-    }
+    } else
+        ret = 2;
     ebpf_clean_btf_file(fs);
 
     return ret;
