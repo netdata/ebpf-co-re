@@ -93,8 +93,10 @@ static int ebpf_softirq_tests()
         ret = softirq_read_array(fd, ebpf_nprocs);
         if (ret)
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
 
     softirq_bpf__destroy(obj);
 
