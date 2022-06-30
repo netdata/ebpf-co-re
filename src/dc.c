@@ -152,8 +152,10 @@ static int ebpf_dc_tests(int selector)
                 fprintf(stderr, "Cannot read apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+        ret = 3;
+    }
 
     dc_bpf__destroy(obj);
 
@@ -211,7 +213,7 @@ int main(int argc, char **argv)
 
     char *lookup_fast = netdata_update_name(function_list[NETDATA_LOOKUP_FAST]);
     if (!lookup_fast) {
-        return -1;
+        return 2;
     }
     function_list[NETDATA_LOOKUP_FAST] = lookup_fast;
 
