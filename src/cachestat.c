@@ -205,8 +205,10 @@ static int ebpf_cachestat_tests(int selector)
                 fprintf(stderr, "Cannot read apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+        ret = 3;
+    }
 
     cachestat_bpf__destroy(obj);
 

@@ -394,8 +394,10 @@ int ebpf_socket_tests(int selector)
                 fprintf(stderr, "All stored data were retrieved with success!\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
 
     socket_bpf__destroy(obj);
 

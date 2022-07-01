@@ -331,8 +331,11 @@ static int ebpf_vfs_tests(int selector)
                 fprintf(stderr, "Cannot read apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
+
 
     vfs_bpf__destroy(obj);
 

@@ -218,8 +218,10 @@ int ebpf_shm_tests(struct btf *bf, int selector)
                 ret = shm_read_apps_array(fd, ebpf_nprocs);
             }
         }
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
 
     shm_bpf__destroy(obj);
 

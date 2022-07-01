@@ -88,8 +88,10 @@ static int ebpf_disk_tests()
         ret = disk_read_array(fd, ebpf_nprocs);
         if (ret)
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
 
     disk_bpf__destroy(obj);
 

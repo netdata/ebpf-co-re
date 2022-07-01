@@ -101,8 +101,10 @@ static int ebpf_mdflush_tests(int selector)
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, 1);
         if (ret) 
             fprintf(stderr, "Cannot read global table\n");
-    } else
+    } else {
+        ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
 
     mdflush_bpf__destroy(obj);
 
