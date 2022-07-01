@@ -8,13 +8,6 @@ concurrency:
 jobs:
   build-artifacts:
     name: Build Artifacts
-    strategy:
-      fail-fast: false
-      matrix:
-        kernel_version:
-          - '5.15.27'
-        libc:
-          - glibc
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,7 +17,7 @@ jobs:
       - name: Run build.sh
         run: |
           os=core
-          ./build.sh ${{ matrix.kernel_version }} ${{ matrix.libc }} "${os}"
+          ./build.sh 5.15.19 glibc "${os}"
       - name: List Artifacts
         run: |
           ls -lah artifacts
@@ -33,5 +26,131 @@ jobs:
         uses: actions/upload-artifact@v3
         if: success()
         with:
-          name: artifacts-${{ matrix.kernel_version }}-${{ matrix.libc }}
+          name: artifacts-5.15.19-glibc
           path: artifacts
+
+  test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: "debian11", url: "https://cache.netdata.cloud/vagrant/debian/debian11/vm.json"}
+          - {name: "ubuntu2110", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/vm.json"}
+          - {name: "ubuntu2204", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2204/vm.json"}
+          - {name: "rockylinux8", url: "https://cache.netdata.cloud/vagrant/rockylinux/rockylinux8/vm.json"}
+          - {name: "almalinux8", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux8/vm.json"}
+          - {name: "almalinux9", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux9/vm.json"}
+          - {name: "fedora35", url: "https://cache.netdata.cloud/vagrant/fedora/fedora35/vm.json"}
+          - {name: "fedora36", url: "https://cache.netdata.cloud/vagrant/fedora/fedora36/vm.json"}
+          - {name: "oraclelinux8", url: "https://cache.netdata.cloud/vagrant/oraclelinux/oraclelinux8/vm.json"}
+          - {name: "alpine313", url: "https://cache.netdata.cloud/vagrant/alpine/alpine313/vm.json"}
+          - {name: "alpine314", url: "https://cache.netdata.cloud/vagrant/alpine/alpine314/vm.json"}
+          - {name: "alpine315", url: "https://cache.netdata.cloud/vagrant/alpine/alpine315/vm.json"}
+          - {name: "alpine316", url: "https://cache.netdata.cloud/vagrant/alpine/alpine316/vm.json"}
+          - {name: "archlinux", url: "https://cache.netdata.cloud/vagrant/archlinux/archlinux/vm.json"}
+          - {name: "opensuse153", url: "https://cache.netdata.cloud/vagrant/opensuse/opensuse153/vm.json"}
+          - {name: "opensuse154", url: "https://cache.netdata.cloud/vagrant/opensuse/opensuse154/vm.json"}
+    runs-on: macos-10.15
+    needs: build-artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Retrieve Dist Tarball
+        id: fetch-dist
+        uses: actions/download-artifact@v3
+        with:
+          name: artifacts-5.15.19-glibc
+          path: src
+      - name: Extract artifact
+        working-directory: src
+        run: |
+          tar -xzf netdata_ebpf-co-re-glibc.tar.xz
+      - name: Update vagrant and virtualbox
+        working-directory: src
+        run: |
+          brew upgrade vagrant
+          brew upgrade --cask virtualbox
+      - name: Create VM
+        uses: nick-invision/retry@v2
+        with:
+          timeout_seconds: 1200
+          max_attempts: 3
+          command: |
+            vagrant box add ${{ matrix.url }} --name ${{ matrix.name }}
+            vagrant destroy ${{ matrix.name }} -f || true
+            vagrant init ${{ matrix.name }} ${{ matrix.url }} --template src/tests/Vagrantfile.erb --force
+            vagrant up
+      - name: Build test binaries
+        id: build
+        run: |
+          vagrant ssh -- -t "sudo /vagrant/src/tests/install-test-dependencies.sh"
+          vagrant ssh -- -t "sudo make all -C /vagrant/src"
+      - name: Run Test 'cachestat'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh cachestat"
+      - name: Run Test 'dc'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh dc"
+      - name: Run Test 'fd'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh fd"
+      - name: Run Test 'mount'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh mount"
+      - name: Run Test 'process'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh process"
+      - name: Run Test 'shm'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh shm"
+      - name: Run Test 'socket'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh socket"
+      - name: Run Test 'swap'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh swap"
+      - name: Run Test 'sync'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh sync"
+      - name: Run Test 'vfs'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh vfs"
+      - name: Run Test 'disk'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh disk"
+      - name: Run Test 'hardirq'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh hardirq"
+      - name: Run Test 'oomkill'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh oomkill"
+      - name: Run Test 'softirq'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh softirq"
+      - name: Run Test 'filesystem'
+        if: always()
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests && sudo ./run_tests.sh filesystem"
+
+# ./filesystem
+# ./md
+#three_tests=( "cachestat" "dc" "fd" "mount" "process" "shm" "socket" "swap" "sync" "vfs" )
+#one_test=( "disk" "hardirq" "oomkill" "softirq" )
+#          wget https://raw.githubusercontent.com/Ferroin/netdata/distro-test-keys/.github/data/distros.yml
