@@ -25,8 +25,8 @@ run_one_test() {
     if [[ "$test_to_run" == "filesystem" ]]; then
         filesystem_list=( "nfs" "ext4" "btrfs" "xfs" )
         for fs in "${filesystem_list[@]}" ; do
-            if grep -v nodev /proc/filesystems | grep $fs; then
-                ./filesystem --$fs
+            if grep -v nodev /proc/filesystems | grep "$fs"; then
+                ./filesystem --"$fs"
             fi
         done
     else
@@ -36,24 +36,21 @@ run_one_test() {
 }
 
 if [[ -n "$custom_test" ]]; then
-    if [[ " ${three_tests[*]} " =~ " ${custom_test} " ]]; then
-        run_three_tests $custom_test
+    if [[ ${three_tests[*]} =~ ${custom_test} ]]; then
+        run_three_tests "$custom_test"
     fi
-    if [[ " ${one_test[*]} " =~ " ${custom_test} " ]]; then
-        run_one_test $custom_test
+    if [[ ${one_test[*]} =~ ${custom_test} ]]; then
+        run_one_test "$custom_test"
     fi
 else
     echo "Running all tests with three options"
     for i in "${three_tests[@]}" ; do
-        run_three_tests $i
+        run_three_tests "$i"
     done
 
     echo "Running all tests with single option"
     for i in "${one_test[@]}" ; do
-        run_one_test $i
+        run_one_test "$i"
     done
     echo "We are not running filesystem or mdflush, because they can generate error, please run them."
 fi
-
-# ./filesystem
-# ./md
