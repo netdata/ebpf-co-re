@@ -10,11 +10,11 @@ run_three_tests() {
 
     echo "================  Running $test_to_run  ================"
     echo "---> Probe: "
-    "./$test_to_run" --probe
+    "./bin/$test_to_run" --probe
     echo "---> Tracepoint: "
-    "./$test_to_run" --tracepoint
+    "./bin/$test_to_run" --tracepoint
     echo "---> Trampoline: "
-    "./$test_to_run" --trampoline
+    "./bin/$test_to_run" --trampoline
     echo "  "
 }
 
@@ -26,11 +26,11 @@ run_one_test() {
         filesystem_list=( "nfs" "ext4" "btrfs" "xfs" )
         for fs in "${filesystem_list[@]}" ; do
             if grep -v nodev /proc/filesystems | grep "$fs"; then
-                ./filesystem --"$fs"
+                ./bin/filesystem --"$fs"
             fi
         done
     else
-        "./$test_to_run"
+        "./bin/$test_to_run"
         echo "  "
     fi
 }

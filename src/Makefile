@@ -3,7 +3,7 @@ CFLAGS = -Wall -ggdb
 INCLUDES = -I../.local_libbpf/ -I../includes/ -I$(LIBBPF)/src/ -I. -I../kernel-collector/includes/ -I$(LIBBPF)/include/uapi/
 CLANG ?= clang 
 LLVM_STRIP ?= llvm-strip
-OUTPUT = tests/
+OUTPUT = tests/bin
 ARCH := $(shell uname -m | sed 's/x86_64/x86/')
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 			 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }') 

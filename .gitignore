@@ -11,6 +11,7 @@
 *.skel.h
 *.a
 
+src/tests/bin/*
 ./src/*.o
 .local_libbpf/bpf
 .local_libbpf/pkgconfig
