@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 custom_test=$1
 
 three_tests=( "cachestat" "dc" "fd" "mount" "process" "shm" "socket" "swap" "sync" "vfs" )
