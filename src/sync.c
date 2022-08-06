@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "netdata_defs.h"
 #include "netdata_tests.h"
 
 #include <sys/mman.h>

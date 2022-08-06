@@ -12,6 +12,7 @@
 
 #include <sys/stat.h>
 
+#include "netdata_defs.h"
 #include "netdata_tests.h"
 #include "netdata_cache.h"
 

@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 
+#include "netdata_defs.h"
 #include "netdata_tests.h"
 #include "netdata_mount.h"
 

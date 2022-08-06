@@ -11,6 +11,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#include "netdata_defs.h"
 #include "netdata_tests.h"
 #include "netdata_shm.h"
 
