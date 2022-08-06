@@ -57,9 +57,8 @@ static inline int netdata_common_page_cache_lru()
     if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU))
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    fill = bpf_map_lookup_elem(&cstat_pid ,&key);
+    __u32 key = 0;
+    fill = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
     if (fill) {
         libnetdata_update_u64(&fill->add_to_page_cache_lru, 1);
     } else {
@@ -77,9 +76,8 @@ static inline int netdata_common_page_accessed()
     if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED))
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    fill = bpf_map_lookup_elem(&cstat_pid ,&key);
+    __u32 key = 0;
+    fill = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
     if (fill) {
         libnetdata_update_u64(&fill->mark_page_accessed, 1);
     } else {
@@ -97,9 +95,8 @@ static inline int netdata_common_page_dirtied()
     if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED))
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    fill = bpf_map_lookup_elem(&cstat_pid ,&key);
+    __u32 key = 0;
+    fill = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
     if (fill) {
         libnetdata_update_u64(&fill->account_page_dirtied, 1);
     } else {
@@ -117,14 +114,13 @@ static inline int netdata_common_buffer_dirty()
     if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY))
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
-    fill = bpf_map_lookup_elem(&cstat_pid ,&pid);
+    __u32 key = 0;
+    fill = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
     if (fill) {
         libnetdata_update_u64(&fill->mark_buffer_dirty, 1);
     } else {
         data.mark_buffer_dirty = 1;
-        bpf_map_update_elem(&cstat_pid, &pid, &data, BPF_ANY);
+        bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
     }
 
     return 0;
