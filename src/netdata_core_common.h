@@ -9,6 +9,14 @@
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 
+enum NETDATA_EBPF_CORE_IDX {
+    NETDATA_EBPF_CORE_IDX_HELP,
+    NETDATA_EBPF_CORE_IDX_PROBE,
+    NETDATA_EBPF_CORE_IDX_TRACEPOINT,
+    NETDATA_EBPF_CORE_IDX_TRAMPOLINE,
+    NETDATA_EBPF_CORE_IDX_PID
+};
+
 /**
  * Fill Control table
  *
@@ -28,6 +36,27 @@ static inline void ebpf_core_fill_ctrl(struct bpf_map *map, enum netdata_apps_le
          if (ret)
              fprintf(stderr, "\"error\" : \"Add key(%u) for controller table failed.\",", i);
     }
+}
+
+/**
+ * Check map level
+ *
+ * Verify if the given value is one of expected values to store inside hash table
+ *
+ * @param value is the value given
+ *
+ * @return It returns the given value when there is no error, or it returns the default when value is
+ * invalid.
+ */
+static inline enum netdata_apps_level ebpf_check_map_level(int value)
+{
+    if (value < NETDATA_APPS_LEVEL_REAL_PARENT || value > NETDATA_APPS_LEVEL_ALL) {
+        fprintf(stderr, "\"Error\" : \"Value given (%d) is not valid, resetting to default 0 (Real Parent).\",\n",
+                value);
+        value = NETDATA_APPS_LEVEL_REAL_PARENT;
+   }
+
+    return value;
 }
 
 #endif /* _NETDATA_CORE_COMMON_H_ */
