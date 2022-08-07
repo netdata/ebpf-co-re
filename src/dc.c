@@ -126,7 +126,7 @@ static pid_t ebpf_update_tables(int global, int apps)
     return pid;
 }
 
-static int ebpf_dc_tests(int selector)
+static int ebpf_dc_tests(int selector, enum netdata_apps_level map_level)
 {
     struct dc_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -141,7 +141,7 @@ static int ebpf_dc_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.dcstat_ctrl);
-        ebpf_core_fill_ctrl(obj->maps.dcstat_ctrl, NETDATA_APPS_LEVEL_ALL);
+        ebpf_core_fill_ctrl(obj->maps.dcstat_ctrl, map_level);
 
         fd = bpf_map__fd(obj->maps.dcstat_global);
         int fd2 = bpf_map__fd(obj->maps.dcstat_pid);
@@ -167,36 +167,43 @@ static int ebpf_dc_tests(int selector)
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
-        {"help",        no_argument,    0,  'h' },
-        {"probe",       no_argument,    0,  'p' },
-        {"tracepoint",  no_argument,    0,  'r' },
-        {"trampoline",  no_argument,    0,  't' },
-        {0, 0, 0, 0}
+        {"help",        no_argument,    0,  0 },
+        {"probe",       no_argument,    0,  0 },
+        {"tracepoint",  no_argument,    0,  0 },
+        {"trampoline",  no_argument,    0,  0 },
+        {"pid",         required_argument,    0,  0 },
+        {0,             no_argument, 0, 0}
     };
 
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
         int c = getopt_long(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
                           ebpf_print_help(argv[0], "dc", 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_PROBE;
                           fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead\n");
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -228,7 +235,7 @@ int main(int argc, char **argv)
         }
     }
 
-    ret =  ebpf_dc_tests(selector);
+    ret =  ebpf_dc_tests(selector, map_level);
 
     free(lookup_fast);
 
