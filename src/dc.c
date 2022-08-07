@@ -179,7 +179,7 @@ int main(int argc, char **argv)
     int option_index = 0;
     enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
-        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        int c = getopt_long_only(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
