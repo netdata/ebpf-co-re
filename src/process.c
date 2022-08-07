@@ -13,6 +13,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_process.h"
 
 #include "process.skel.h"
@@ -169,7 +170,7 @@ static int ebpf_process_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.process_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.process_ctrl, NETDATA_APPS_LEVEL_ALL);
 
         fd = bpf_map__fd(obj->maps.tbl_total_stats);
         int fd2 = bpf_map__fd(obj->maps.tbl_pid_stats);

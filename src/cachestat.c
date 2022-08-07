@@ -14,6 +14,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_cache.h"
 
 #include "cachestat.skel.h"
@@ -192,7 +193,7 @@ static int ebpf_cachestat_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.cstat_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.cstat_ctrl, NETDATA_APPS_LEVEL_ALL);
 
         fd = bpf_map__fd(obj->maps.cstat_global);
         int fd2 = bpf_map__fd(obj->maps.cstat_pid);

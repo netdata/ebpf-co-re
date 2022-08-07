@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_dc.h"
 
 #include "dc.skel.h"
@@ -140,7 +141,7 @@ static int ebpf_dc_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.dcstat_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.dcstat_ctrl, NETDATA_APPS_LEVEL_ALL);
 
         fd = bpf_map__fd(obj->maps.dcstat_global);
         int fd2 = bpf_map__fd(obj->maps.dcstat_pid);
