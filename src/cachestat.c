@@ -156,21 +156,23 @@ static int cachestat_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
     if (!stored)
         return 2;
 
-    uint32_t my_pid = (uint32_t) getpid();
-
     uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &my_pid, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].add_to_page_cache_lru + stored[j].mark_page_accessed +
-                        stored[j].account_page_dirtied + stored[j].mark_buffer_dirty);
+
+    int key, next_key;
+    key = next_key = 0;
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs*sizeof(netdata_cachestat_t));
+
+        key = next_key;
     }
 
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -199,7 +201,7 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
         int fd2 = bpf_map__fd(obj->maps.cstat_pid);
         pid_t my_pid = ebpf_update_tables(fd, fd2);
 
-        sleep(10);
+        sleep(60);
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_CACHESTAT_END);
         if (!ret) {
             ret = cachestat_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
