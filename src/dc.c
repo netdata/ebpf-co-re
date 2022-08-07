@@ -87,25 +87,29 @@ static inline int ebpf_load_and_attach(struct dc_bpf *obj, int selector)
     return ret;
 }
 
-static int dc_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_pid)
+static int dc_read_apps_array(int fd, int ebpf_nprocs)
 {
     netdata_dc_stat_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_dc_stat_t));
     if (!stored)
         return 2;
 
+    uint32_t key, next_key;
     uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &my_pid, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].references + stored[j].slow +
-                        stored[j].missed);
+    key = next_key = 0;
+
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs*sizeof(netdata_dc_stat_t));
+
+        key = next_key;
     }
 
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -145,11 +149,12 @@ static int ebpf_dc_tests(int selector, enum netdata_apps_level map_level)
 
         fd = bpf_map__fd(obj->maps.dcstat_global);
         int fd2 = bpf_map__fd(obj->maps.dcstat_pid);
-        pid_t my_pid = ebpf_update_tables(fd, fd2);
+        (void)ebpf_update_tables(fd, fd2);
+        sleep(60);
 
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_DIRECTORY_CACHE_END);
         if (!ret) {
-            ret = dc_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
+            ret = dc_read_apps_array(fd2, ebpf_nprocs);
             if (ret)
                 fprintf(stderr, "Cannot read apps table\n");
         } else
