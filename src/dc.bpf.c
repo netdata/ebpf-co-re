@@ -49,9 +49,7 @@ static inline int netdata_common_lookup_fast()
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    fill = bpf_map_lookup_elem(&dcstat_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &dcstat_ctrl, &dcstat_pid);
     if (fill) {
         libnetdata_update_u64(&fill->references, 1);
     } else {
@@ -73,9 +71,7 @@ static inline int netdata_common_d_lookup(long ret)
         return 0;
 
     if (*apps == 1) {
-        __u64 pid_tgid = bpf_get_current_pid_tgid();
-        key = (__u32)(pid_tgid >> 32);
-        fill = bpf_map_lookup_elem(&dcstat_pid ,&key);
+        fill = netdata_get_pid_structure(&key, &dcstat_ctrl, &dcstat_pid);
         if (fill) {
             libnetdata_update_u64(&fill->slow, 1);
         } else {
@@ -88,7 +84,7 @@ static inline int netdata_common_d_lookup(long ret)
     if (!ret) {
         libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_MISS, 1);
         if (*apps == 1) {
-            fill = bpf_map_lookup_elem(&dcstat_pid ,&key);
+            fill = netdata_get_pid_structure(&key, &dcstat_ctrl, &dcstat_pid);
             if (fill) {
                 libnetdata_update_u64(&fill->missed, 1);
             } else {

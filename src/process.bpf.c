@@ -38,6 +38,15 @@ struct {
  *
  ***********************************************************************************/
 
+static inline void netdata_fill_common_process_data(struct netdata_pid_stat_t *data)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+
+    data->pid_tgid = pid_tgid;
+    data->pid = tgid;
+}
+
 static inline int netdata_common_release_task()
 {
     struct netdata_pid_stat_t *fill;
@@ -49,10 +58,7 @@ static inline int netdata_common_release_task()
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_pid_stats ,&key);
+    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         libnetdata_update_u32(&fill->release_call, 1) ;
         fill->removeme = 1;
@@ -76,10 +82,7 @@ static inline int netdata_common_fork_clone(int ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_pid_stats ,&key);
+    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
 
@@ -87,8 +90,7 @@ static inline int netdata_common_fork_clone(int ret)
             libnetdata_update_u32(&fill->task_err, 1) ;
         } 
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_process_data(&data);
         if (ret < 0) {
             data.task_err = 1;
         } 
@@ -117,10 +119,7 @@ int netdata_tracepoint_sched_process_exit(struct netdata_sched_process_exit *ptr
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_pid_stats ,&key);
+    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         libnetdata_update_u32(&fill->exit_call, 1) ;
     } 
@@ -143,16 +142,12 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_pid_stats, &key);
+    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
         libnetdata_update_u32(&fill->create_process, 1) ;
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_process_data(&data);
         data.create_process = 1;
 
         bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
@@ -183,18 +178,14 @@ int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_pid_stats ,&key);
+    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
         libnetdata_update_u32(&fill->create_process, 1);
         if (thread)
             libnetdata_update_u32(&fill->create_thread, 1);
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_process_data(&data);
         data.create_process = 1;
         if (thread)
             data.create_thread = 1;

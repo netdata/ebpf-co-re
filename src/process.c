@@ -11,7 +11,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_process.h"
 
 #include "process.skel.h"
@@ -115,37 +117,28 @@ static pid_t ebpf_update_tables(int global, int apps)
     return pid;
 }
 
-static int process_read_specific_app(struct netdata_pid_stat_t *stored, int fd, int ebpf_nprocs, uint32_t idx)
-{
-    uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].exit_call + stored[j].release_call +
-                        stored[j].create_process +stored[j].create_thread);
-        }
-    }
-
-    return counter;
-}
-
 static int process_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 {
     struct netdata_pid_stat_t *stored = calloc((size_t)ebpf_nprocs, sizeof(struct netdata_pid_stat_t));
     if (!stored)
         return 2;
 
-    uint32_t my_pid = (uint32_t) getpid();
-
     uint64_t counter = 0;
-    counter += process_read_specific_app(stored, fd, ebpf_nprocs, my_pid);
-    memset(stored, 0, (size_t)ebpf_nprocs * sizeof(struct netdata_pid_stat_t));
-    counter += process_read_specific_app(stored, fd, ebpf_nprocs, child);
+    int key, next_key;
+    key = next_key = 0;
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
+        }
+        memset(stored, 0, ebpf_nprocs*sizeof(struct netdata_pid_stat_t));
+
+        key = next_key;
+    }
 
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -153,7 +146,7 @@ static int process_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 }
 
 
-static int ebpf_process_tests(int selector)
+static int ebpf_process_tests(int selector, enum netdata_apps_level map_level)
 {
     struct process_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -168,13 +161,13 @@ static int ebpf_process_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.process_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.process_ctrl, map_level);
 
         fd = bpf_map__fd(obj->maps.tbl_total_stats);
         int fd2 = bpf_map__fd(obj->maps.tbl_pid_stats);
         pid_t my_pid = ebpf_update_tables(fd, fd2);
         // Wait data from more processes
-        sleep(10);
+        sleep(60);
 
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_GLOBAL_COUNTER);
         if (!ret) {
@@ -196,35 +189,42 @@ static int ebpf_process_tests(int selector)
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
-        {"help",        no_argument,    0,  'h' },
-        {"probe",       no_argument,    0,  'p' },
-        {"tracepoint",  no_argument,    0,  'r' },
-        {"trampoline",  no_argument,    0,  't' },
-        {0, 0, 0, 0}
+        {"help",        no_argument,    0,  0 },
+        {"probe",       no_argument,    0,  0 },
+        {"tracepoint",  no_argument,    0,  0 },
+        {"trampoline",  no_argument,    0,  0 },
+        {"pid",         required_argument,    0,  0 },
+        {0,             no_argument, 0, 0}
     };
 
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
-        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        int c = getopt_long_only(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
                           ebpf_print_help(argv[0], "mount", 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_TRACEPOINT;
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -242,6 +242,6 @@ int main(int argc, char **argv)
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    return ebpf_process_tests(selector);
+    return ebpf_process_tests(selector, map_level);
 }
 
