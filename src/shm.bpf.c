@@ -68,9 +68,8 @@ static inline int netdata_update_apps(__u32 idx)
 {
     netdata_shm_t data = {};
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    netdata_shm_t *fill = bpf_map_lookup_elem(&tbl_pid_shm, &key);
+    __u32 key;
+    netdata_shm_t *fill = netdata_get_pid_structure(&key, &shm_ctrl, &tbl_pid_shm);
     if (fill) {
         netdata_update_stored_data(fill, idx);
     } else {
