@@ -132,6 +132,25 @@ static inline int netdata_ebpf_common_shmctl()
     return netdata_update_apps(NETDATA_KEY_SHMCTL_CALL);
 }
 
+static inline int netdata_release_task_shm()
+{
+    netdata_shm_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&shm_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &shm_ctrl, &tbl_pid_shm);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_pid_shm, &key);
+    }
+
+    return 0;
+}
+
 /************************************************************************************
  *
  *                     SHARED MEMORY (tracepoint)
@@ -192,6 +211,12 @@ int BPF_KPROBE(netdata_shmctl_probe)
     return netdata_ebpf_common_shmctl();
 }
 
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_shm_release_task_probe)
+{
+    return netdata_release_task_shm();
+}
+
 /************************************************************************************
  *
  *                     SHARED MEMORY (trampoline)
@@ -220,6 +245,12 @@ SEC("fentry/netdata_shmctl")
 int BPF_PROG(netdata_shmctl_fentry)
 {
     return netdata_ebpf_common_shmctl();
+}
+
+SEC("fentry/release_task")
+int BPF_PROG(netdata_shm_release_task_fentry)
+{
+    return netdata_release_task_shm();
 }
 
 char _license[] SEC("license") = "GPL";

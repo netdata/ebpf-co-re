@@ -17,11 +17,14 @@
 
 #include "shm.skel.h"
 
-char *syscalls[NETDATA_SHM_END] = { "__x64_sys_shmget",
-                                    "__x64_sys_shmat",
-                                    "__x64_sys_shmdt",
-                                    "__x64_sys_shmctl"
+char *syscalls[] = { "__x64_sys_shmget",
+                     "__x64_sys_shmat",
+                     "__x64_sys_shmdt",
+                     "__x64_sys_shmctl",
+                     "release_task"
                                     };
+// This preprocessor is defined here, because it is not useful in kernel-colector
+#define NETDATA_SHM_RELEASE_TASK 4
 
 static void ebpf_disable_tracepoint(struct shm_bpf *obj)
 {
@@ -37,6 +40,7 @@ static void ebpf_disable_kprobe(struct shm_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_shmat_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_shmdt_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_shmctl_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_shm_release_task_probe, false);
 }
 
 static void ebpf_disable_trampoline(struct shm_bpf *obj)
@@ -45,6 +49,7 @@ static void ebpf_disable_trampoline(struct shm_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_shmat_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_shmdt_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_shmctl_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_shm_release_task_fentry, false);
 }
 
 static int ebpf_attach_kprobe(struct shm_bpf *obj)
@@ -73,6 +78,13 @@ static int ebpf_attach_kprobe(struct shm_bpf *obj)
     if (ret)
         return -1;
 
+    obj->links.netdata_shm_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_shm_release_task_probe,
+                                                                false, syscalls[NETDATA_SHM_RELEASE_TASK]);
+    ret = libbpf_get_error(obj->links.netdata_shm_release_task_probe);
+    if (ret)
+        return -1;
+
+
     return 0;
 }
 
@@ -90,6 +102,8 @@ static void ebpf_set_trampoline_target(struct shm_bpf *obj)
     bpf_program__set_attach_target(obj->progs.netdata_shmctl_fentry, 0,
                                    syscalls[NETDATA_KEY_SHMCTL_CALL]);
 
+    bpf_program__set_attach_target(obj->progs.netdata_shm_release_task_fentry, 0,
+                                   syscalls[NETDATA_SHM_RELEASE_TASK]);
 }
 
 static inline int ebpf_load_and_attach(struct shm_bpf *obj, int selector)
