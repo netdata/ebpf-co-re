@@ -20,10 +20,11 @@ char *function_list[] = { "do_sys_openat2",
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
                           "close_fd",
 #else
-                          "__close_fd", 
+                          "__close_fd",
 #endif
                           "release_task"
                         };
+// This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_FD_RELEASE_TASK 2
 
 static inline void ebpf_disable_probes(struct fd_bpf *obj)
