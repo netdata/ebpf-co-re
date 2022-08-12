@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 
         switch (option_index) {
             case NETDATA_EBPF_CORE_IDX_HELP: {
-                          ebpf_print_help(argv[0], "dc", 1);
+                          ebpf_core_print_help(argv[0], "dc", 1, 1);
                           exit(0);
                       }
             case NETDATA_EBPF_CORE_IDX_PROBE: {

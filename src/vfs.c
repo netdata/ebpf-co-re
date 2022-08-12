@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_vfs.h"
 
 #include "vfs.skel.h"
@@ -375,7 +376,7 @@ int main(int argc, char **argv)
 
         switch (c) {
             case 'h': {
-                          ebpf_print_help(argv[0], "vfs", 1);
+                          ebpf_core_print_help(argv[0], "vfs", 1, 1);
                           exit(0);
                       }
             case 'p': {
