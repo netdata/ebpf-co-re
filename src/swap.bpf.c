@@ -84,6 +84,25 @@ static inline int common_writepage()
     return 0;
 }
 
+static inline int netdata_release_task_swap()
+{
+    netdata_swap_access_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &swap_ctrl, &tbl_pid_swap);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_pid_swap, &key);
+    }
+
+    return 0;
+}
+
 /***********************************************************************************
  *
  *                            SWAP SECTION(kprobe)
@@ -102,6 +121,12 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
     return common_writepage();
 }
 
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_release_task_probe)
+{
+    return netdata_release_task_swap();
+}
+
 /***********************************************************************************
  *
  *                            SWAP SECTION(trampoline)
@@ -109,15 +134,21 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
  ***********************************************************************************/
 
 SEC("fentry/swap_readpage")
-int BPF_KPROBE(netdata_swap_readpage_fentry)
+int BPF_PROG(netdata_swap_readpage_fentry)
 {
     return common_readpage();
 }
 
 SEC("fentry/swap_writepage")
-int BPF_KPROBE(netdata_swap_writepage_fentry)
+int BPF_PROG(netdata_swap_writepage_fentry)
 {
     return common_writepage();
+}
+
+SEC("fentry/release_task")
+int BPF_PROG(netdata_release_task_fentry)
+{
+    return netdata_release_task_swap();
 }
 
 char _license[] SEC("license") = "GPL";
