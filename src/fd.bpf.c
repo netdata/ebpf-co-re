@@ -132,6 +132,25 @@ static inline void netdata_close_global(int ret)
     libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_CALLS_CLOSE_FD, 1);
 }
 
+static inline int netdata_release_task_fd()
+{
+    struct netdata_fd_stat_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&fd_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_fd_pid, &key);
+    }
+
+    return 0;
+}
+
 /************************************************************************************
  *
  *                           FD SECTION(kprobe)
@@ -189,6 +208,12 @@ int BPF_KPROBE(netdata___close_fd_kprobe)
     return netdata_apps_close_fd(0);
 }
 
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_release_task_fd_kprobe)
+{
+    return netdata_release_task_fd();
+}
+
 /************************************************************************************
  *
  *                           FD SECTION(trampoline)
@@ -242,6 +267,13 @@ int BPF_PROG(netdata___close_fd_fexit, struct files_struct *files, unsigned fd, 
 
     return netdata_apps_close_fd(ret);
 }
+
+SEC("kprobe/release_task")
+int BPF_PROG(netdata_release_task_fd_fentry)
+{
+    return netdata_release_task_fd();
+}
+
 
 char _license[] SEC("license") = "GPL";
 

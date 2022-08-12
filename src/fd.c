@@ -18,16 +18,19 @@
 
 char *function_list[] = { "do_sys_openat2",
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-                          "close_fd" 
+                          "close_fd",
 #else
-                          "__close_fd" 
+                          "__close_fd", 
 #endif
+                          "release_task"
                         };
+#define NETDATA_FD_RELEASE_TASK 2
 
 static inline void ebpf_disable_probes(struct fd_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_release_task_fd_kprobe, false);
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
     bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
@@ -44,10 +47,8 @@ static inline void ebpf_disable_specific_probes(struct fd_bpf *obj)
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
     bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
 #else
     bpf_program__set_autoload(obj->progs.netdata_close_fd_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
 #endif
 }
@@ -60,6 +61,7 @@ static inline void ebpf_disable_trampoline(struct fd_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_close_fd_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_fexit, false);
+    bpf_program__set_autoload(obj->progs.netdata_release_task_fd_fentry, false);
 }
 
 static inline void ebpf_disable_specific_trampoline(struct fd_bpf *obj)
@@ -80,6 +82,9 @@ static void ebpf_set_trampoline_target(struct fd_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_sys_open_fexit, 0,
                                    function_list[NETDATA_FD_OPEN]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_release_task_fd_fentry, 0,
+                                   function_list[NETDATA_FD_RELEASE_TASK]);
 
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
     bpf_program__set_attach_target(obj->progs.netdata_close_fd_fentry, 0,
