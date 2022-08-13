@@ -120,12 +120,16 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_ip)
     if (!stored)
         return 2;
 
+    int key, next_key;
+    key = next_key = 0;
     uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &my_ip, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].read + stored[j].write);
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs * sizeof(netdata_swap_access_t));
+
+        key = next_key;
     }
 
     free(stored);
@@ -138,7 +142,7 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_ip)
     return 2;
 }
 
-int ebpf_load_swap(int selector)
+int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 {
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
 
@@ -154,7 +158,7 @@ int ebpf_load_swap(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.swap_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.swap_ctrl, map_level);
 
         fd = bpf_map__fd(obj->maps.tbl_swap);
         int fd2 = bpf_map__fd(obj->maps.tbl_pid_swap);
@@ -179,36 +183,43 @@ int ebpf_load_swap(int selector)
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
-        {"help",        no_argument,    0,  'h' },
-        {"probe",       no_argument,    0,  'p' },
-        {"tracepoint",  no_argument,    0,  'r' },
-        {"trampoline",  no_argument,    0,  't' },
+        {"help",        no_argument,    0,  0 },
+        {"probe",       no_argument,    0,  0 },
+        {"tracepoint",  no_argument,    0,  0 },
+        {"trampoline",  no_argument,    0,  0 },
+        {"pid",         required_argument,    0,  0 },
         {0, 0, 0, 0}
     };
 
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
-        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        int c = getopt_long_only(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
                           ebpf_core_print_help(argv[0], "swap", 1, 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_PROBE;
                           fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead\n");
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -235,6 +246,6 @@ int main(int argc, char **argv)
         }
     }
 
-    return ebpf_load_swap(selector);
+    return ebpf_load_swap(selector, map_level);
 }
 
