@@ -135,7 +135,7 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_ip)
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -163,6 +163,7 @@ int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
         fd = bpf_map__fd(obj->maps.tbl_swap);
         int fd2 = bpf_map__fd(obj->maps.tbl_pid_swap);
         pid_t my_pid = ebpf_fill_tables(fd, fd2);
+        sleep(60);
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SWAP_END);
         if (!ret) {
             ret =  swap_read_apps_array(fd2, ebpf_nprocs, my_pid);
