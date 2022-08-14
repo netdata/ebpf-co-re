@@ -100,21 +100,21 @@ static int ebpf_load_and_attach(struct swap_bpf *obj, int selector)
     return ret;
 }
 
-static pid_t ebpf_fill_tables(int global, int apps)
+static void ebpf_fill_tables(int global, int apps)
 {
-    pid_t pid = ebpf_fill_global(global);
+    (void)ebpf_fill_global(global);
 
     netdata_swap_access_t swap_data = { .read = 1, .write = 1 };
 
-    uint32_t idx = (pid_t)pid;
-    int ret = bpf_map_update_elem(apps, &idx, &swap_data, 0);
-    if (ret)
-        fprintf(stderr, "Cannot insert value to apps table.");
-
-    return pid;
+    uint32_t idx;
+    for (idx = 0; idx < 10; idx++) {
+        int ret = bpf_map_update_elem(apps, &idx, &swap_data, 0);
+        if (ret)
+            fprintf(stderr, "Cannot insert value to apps table.");
+    }
 }
 
-static int swap_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_ip)
+static int swap_read_apps_array(int fd, int ebpf_nprocs)
 {
     netdata_swap_access_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_swap_access_t));
     if (!stored)
@@ -162,11 +162,11 @@ int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 
         fd = bpf_map__fd(obj->maps.tbl_swap);
         int fd2 = bpf_map__fd(obj->maps.tbl_pid_swap);
-        pid_t my_pid = ebpf_fill_tables(fd, fd2);
+        ebpf_fill_tables(fd, fd2);
         sleep(60);
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SWAP_END);
         if (!ret) {
-            ret =  swap_read_apps_array(fd2, ebpf_nprocs, my_pid);
+            ret =  swap_read_apps_array(fd2, ebpf_nprocs);
             if (ret)
                 fprintf(stderr, "Cannot read apps table\n");
         } else
