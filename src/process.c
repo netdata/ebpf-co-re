@@ -109,10 +109,12 @@ static pid_t ebpf_update_tables(int global, int apps)
                                         .create_process = 1, .create_thread = 1, .task_err = 1, 
                                         .removeme = 0 };
 
-    uint32_t idx = (uint32_t)pid;
-    int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
-    if (ret)
-        fprintf(stderr, "Cannot insert value to global table.");
+    uint32_t idx;
+    for (idx = 0 ; idx < 10; idx++) {
+        int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
+        if (ret)
+            fprintf(stderr, "Cannot insert value to global table.");
+    }
 
     return pid;
 }
