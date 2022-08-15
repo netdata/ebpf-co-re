@@ -194,7 +194,7 @@ void shm_fill_tables(struct shm_bpf *obj)
 
     fd = bpf_map__fd(obj->maps.tbl_pid_shm);
     netdata_shm_t apps_data = { .get = 1, .at = 1, .dt = 1, .ctl = 1};
-    for (key = 0; key < 4; key++) {
+    for (key = 0; key < 70; key++) {
         if (bpf_map_update_elem(fd, &key, &apps_data, BPF_ANY))
             fprintf(stderr, "Cannot insert key %u\n", key);
     }

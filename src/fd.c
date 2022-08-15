@@ -196,7 +196,7 @@ static int fd_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_pid)
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 

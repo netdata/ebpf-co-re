@@ -107,7 +107,7 @@ static void ebpf_fill_tables(int global, int apps)
     netdata_swap_access_t swap_data = { .read = 1, .write = 1 };
 
     uint32_t idx;
-    for (idx = 0; idx < 10; idx++) {
+    for (idx = 0; idx < 70; idx++) {
         int ret = bpf_map_update_elem(apps, &idx, &swap_data, 0);
         if (ret)
             fprintf(stderr, "Cannot insert value to apps table.");
