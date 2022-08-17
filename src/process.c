@@ -110,7 +110,7 @@ static pid_t ebpf_update_tables(int global, int apps)
                                         .removeme = 0 };
 
     uint32_t idx;
-    for (idx = 0 ; idx < 10; idx++) {
+    for (idx = 0 ; idx < NETDATA_EBPF_CORE_MIN_STORE; idx++) {
         int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
         if (ret)
             fprintf(stderr, "Cannot insert value to global table.");
