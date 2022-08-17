@@ -13,6 +13,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_mount.h"
 
 #include "mount.skel.h"
@@ -221,7 +222,7 @@ int main(int argc, char **argv)
 
         switch (c) {
             case 'h': {
-                          ebpf_print_help(argv[0], "mount", 1);
+                          ebpf_core_print_help(argv[0], "mount", 1, 0);
                           exit(0);
                       }
             case 'p': {

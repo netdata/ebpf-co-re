@@ -126,6 +126,25 @@ static inline int netdata_common_buffer_dirty()
     return 0;
 }
 
+static inline int netdata_release_task_cstat()
+{
+    netdata_cachestat_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&cstat_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
+    if (removeme) {
+        bpf_map_delete_elem(&cstat_pid, &key);
+    }
+
+    return 0;
+}
+
 /************************************************************************************
  *
  *                             CACHESTAT Section (Probe)
@@ -179,6 +198,12 @@ int BPF_KPROBE(netdata_mark_buffer_dirty_kprobe)
     return netdata_common_buffer_dirty();
 }
 
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_release_task_kprobe)
+{
+    return netdata_release_task_cstat();
+}
+
 /************************************************************************************
  *
  *                             CACHESTAT Section (Probe)
@@ -227,6 +252,12 @@ SEC("fentry/mark_buffer_dirty")
 int BPF_PROG(netdata_mark_buffer_dirty_fentry)
 {
     return netdata_common_buffer_dirty();
+}
+
+SEC("fentry/release_task")
+int BPF_PROG(netdata_release_task_fentry)
+{
+    return netdata_release_task_cstat();
 }
 
 char _license[] SEC("license") = "GPL";

@@ -13,15 +13,19 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_shm.h"
 
 #include "shm.skel.h"
 
-char *syscalls[NETDATA_SHM_END] = { "__x64_sys_shmget",
-                                    "__x64_sys_shmat",
-                                    "__x64_sys_shmdt",
-                                    "__x64_sys_shmctl"
+char *syscalls[] = { "__x64_sys_shmget",
+                     "__x64_sys_shmat",
+                     "__x64_sys_shmdt",
+                     "__x64_sys_shmctl",
+                     "release_task"
                                     };
+// This preprocessor is defined here, because it is not useful in kernel-colector
+#define NETDATA_SHM_RELEASE_TASK 4
 
 static void ebpf_disable_tracepoint(struct shm_bpf *obj)
 {
@@ -37,6 +41,7 @@ static void ebpf_disable_kprobe(struct shm_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_shmat_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_shmdt_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_shmctl_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_shm_release_task_probe, false);
 }
 
 static void ebpf_disable_trampoline(struct shm_bpf *obj)
@@ -45,6 +50,7 @@ static void ebpf_disable_trampoline(struct shm_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_shmat_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_shmdt_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_shmctl_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_shm_release_task_fentry, false);
 }
 
 static int ebpf_attach_kprobe(struct shm_bpf *obj)
@@ -73,6 +79,13 @@ static int ebpf_attach_kprobe(struct shm_bpf *obj)
     if (ret)
         return -1;
 
+    obj->links.netdata_shm_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_shm_release_task_probe,
+                                                                false, syscalls[NETDATA_SHM_RELEASE_TASK]);
+    ret = libbpf_get_error(obj->links.netdata_shm_release_task_probe);
+    if (ret)
+        return -1;
+
+
     return 0;
 }
 
@@ -90,6 +103,8 @@ static void ebpf_set_trampoline_target(struct shm_bpf *obj)
     bpf_program__set_attach_target(obj->progs.netdata_shmctl_fentry, 0,
                                    syscalls[NETDATA_KEY_SHMCTL_CALL]);
 
+    bpf_program__set_attach_target(obj->progs.netdata_shm_release_task_fentry, 0,
+                                   syscalls[NETDATA_SHM_RELEASE_TASK]);
 }
 
 static inline int ebpf_load_and_attach(struct shm_bpf *obj, int selector)
@@ -126,6 +141,7 @@ static inline int ebpf_load_and_attach(struct shm_bpf *obj, int selector)
     return ret;
 }
 
+/* This is kept to show how to use the syscalls
 int call_syscalls()
 {
 #define SHMSZ   27
@@ -164,6 +180,25 @@ int call_syscalls()
 
     return 0;
 }
+*/
+
+void shm_fill_tables(struct shm_bpf *obj)
+{
+    int fd = bpf_map__fd(obj->maps.tbl_shm);
+    uint32_t key;
+    uint64_t global_data = 64;
+    for (key = 0; key < NETDATA_SHM_END; key++) {
+        if (bpf_map_update_elem(fd, &key, &global_data, BPF_ANY))
+            fprintf(stderr, "Cannot insert key %u\n", key);
+    }
+
+    fd = bpf_map__fd(obj->maps.tbl_pid_shm);
+    netdata_shm_t apps_data = { .get = 1, .at = 1, .dt = 1, .ctl = 1};
+    for (key = 0; key < NETDATA_EBPF_CORE_MIN_STORE; key++) {
+        if (bpf_map_update_elem(fd, &key, &apps_data, BPF_ANY))
+            fprintf(stderr, "Cannot insert key %u\n", key);
+    }
+}
 
 static int shm_read_apps_array(int fd, int ebpf_nprocs)
 {
@@ -171,26 +206,29 @@ static int shm_read_apps_array(int fd, int ebpf_nprocs)
     if (!stored)
         return 2;
 
-    uint32_t idx = (uint32_t) getpid();
+    int key, next_key;
+    key = next_key = 0;
     uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].get + stored[j].at + stored[j].dt +stored[j].ctl);
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs * sizeof(netdata_shm_t));
+
+        key = next_key;
     }
 
     free(stored);
 
-    if (counter >= 4) {
-        fprintf(stdout, "Apps data stored with success\n");
+    if (counter) {
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
     return 2;
 }
 
-int ebpf_shm_tests(struct btf *bf, int selector)
+int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_level)
 {
     struct shm_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -208,16 +246,16 @@ int ebpf_shm_tests(struct btf *bf, int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.shm_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.shm_ctrl, map_level);
 
-        ret = call_syscalls();
+        //ret = call_syscalls();
+        shm_fill_tables(obj);
+        sleep(60);
+        fd = bpf_map__fd(obj->maps.tbl_shm);
+        ret = ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SHM_END);
         if (!ret) {
-            fd = bpf_map__fd(obj->maps.tbl_shm);
-            ret = ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SHM_END);
-            if (!ret) {
-                fd = bpf_map__fd(obj->maps.tbl_pid_shm);
-                ret = shm_read_apps_array(fd, ebpf_nprocs);
-            }
+            fd = bpf_map__fd(obj->maps.tbl_pid_shm);
+            ret = shm_read_apps_array(fd, ebpf_nprocs);
         }
     } else {
         ret = 3;
@@ -236,32 +274,39 @@ int main(int argc, char **argv)
         {"probe",       no_argument,    0,  'p' },
         {"tracepoint",  no_argument,    0,  'r' },
         {"trampoline",  no_argument,    0,  't' },
+        {"pid",         required_argument,    0,  0 },
         {0, 0, 0, 0}
     };
 
     // use trampoline as default
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
         int c = getopt_long(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
-                          ebpf_print_help(argv[0], "shared_memory", 1);
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
+                          ebpf_core_print_help(argv[0], "shared_memory", 1, 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_TRACEPOINT;
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -284,7 +329,7 @@ int main(int argc, char **argv)
         bf = netdata_parse_btf_file((const char *)NETDATA_BTF_FILE);
     }
 
-    ret = ebpf_shm_tests(bf, selector);
+    ret = ebpf_shm_tests(bf, selector, map_level);
 
     if (bf)
         btf__free(bf);

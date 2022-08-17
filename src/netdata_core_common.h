@@ -17,6 +17,8 @@ enum NETDATA_EBPF_CORE_IDX {
     NETDATA_EBPF_CORE_IDX_PID
 };
 
+#define NETDATA_EBPF_CORE_MIN_STORE 128
+
 /**
  * Fill Control table
  *
@@ -57,6 +59,21 @@ static inline enum netdata_apps_level ebpf_check_map_level(int value)
    }
 
     return value;
+}
+
+static inline void ebpf_core_print_help(char *name, char *info, int has_trampoline, int has_integration) {
+    fprintf(stdout, "%s tests if it is possible to monitor %s on host\n\n"
+                    "The following options are available:\n\n"
+                    "--help       : Prints this help.\n"
+                    "--probe      : Use probe and do no try to use trampolines (fentry/fexit).\n"
+                    "--tracepoint : Use tracepoint.\n"
+                    , name, info);
+    if (has_trampoline)
+        fprintf(stdout, "--trampoline : Try to use trampoline(fentry/fexit). If this is not possible"
+                        " probes will be used.\n");
+    if (has_integration)
+        fprintf(stdout, "--pid        : Store PID according argument given. Values can be:\n"
+                        "\t\t0 - Real parents\n\t\t1 - Parents\n\t\t2 - All pids\n");
 }
 
 #endif /* _NETDATA_CORE_COMMON_H_ */

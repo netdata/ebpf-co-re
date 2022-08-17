@@ -33,6 +33,21 @@ struct {
 } vfs_ctrl SEC(".maps");
 
 /************************************************************************************
+ *
+ *                                Local Function Section
+ *
+ ***********************************************************************************/
+
+static inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat_t *data)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+
+    data->pid_tgid = pid_tgid;
+    data->pid = tgid;
+}
+
+/************************************************************************************
  *     
  *                               VFS Common
  *     
@@ -53,10 +68,7 @@ static __always_inline int netdata_common_vfs_write(__u64 tot, ssize_t ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->write_call, 1) ;
 
@@ -67,8 +79,7 @@ static __always_inline int netdata_common_vfs_write(__u64 tot, ssize_t ret)
             libnetdata_update_u64(&fill->write_bytes, tot);
 
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0)
             data.write_err = 1;
@@ -98,10 +109,7 @@ static __always_inline int netdata_common_vfs_writev(__u64 tot, ssize_t ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->writev_call, 1) ;
 
@@ -112,8 +120,7 @@ static __always_inline int netdata_common_vfs_writev(__u64 tot, ssize_t ret)
             libnetdata_update_u64(&fill->writev_bytes, tot);
         }
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.writev_err = 1;
@@ -142,10 +149,7 @@ static __always_inline int netdata_common_vfs_read(__u64 tot, ssize_t ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->read_call, 1) ;
 
@@ -156,8 +160,7 @@ static __always_inline int netdata_common_vfs_read(__u64 tot, ssize_t ret)
             libnetdata_update_u64(&fill->read_bytes, tot);
         }
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.read_err = 1;
@@ -186,10 +189,7 @@ static __always_inline int netdata_common_vfs_readv(__u64 tot, ssize_t ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->readv_call, 1) ;
 
@@ -200,8 +200,7 @@ static __always_inline int netdata_common_vfs_readv(__u64 tot, ssize_t ret)
             libnetdata_update_u64(&fill->readv_bytes, tot);
         }
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.readv_err = 1;
@@ -229,10 +228,7 @@ static __always_inline int netdata_common_vfs_unlink(int ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->unlink_call, 1) ;
 
@@ -241,8 +237,7 @@ static __always_inline int netdata_common_vfs_unlink(int ret)
             libnetdata_update_u32(&fill->unlink_err, 1) ;
         }
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0)
             data.unlink_err = 1;
@@ -269,10 +264,7 @@ static __always_inline int netdata_common_vfs_fsync(int ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->fsync_call, 1) ;
 
@@ -281,8 +273,7 @@ static __always_inline int netdata_common_vfs_fsync(int ret)
             libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_FSYNC, 1);
         } 
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.fsync_err = 1;
@@ -310,10 +301,7 @@ static __always_inline int netdata_common_vfs_open(int ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->open_call, 1) ;
 
@@ -322,8 +310,7 @@ static __always_inline int netdata_common_vfs_open(int ret)
             libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_OPEN, 1);
         } 
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.open_err = 1;
@@ -351,10 +338,7 @@ static __always_inline int netdata_common_vfs_create(int ret)
         if (*apps == 0)
             return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_vfs_pid ,&key);
+    fill = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
     if (fill) {
         libnetdata_update_u32(&fill->create_call, 1) ;
 
@@ -363,8 +347,7 @@ static __always_inline int netdata_common_vfs_create(int ret)
             libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_CREATE, 1);
         } 
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_vfs_data(&data);
 
         if (ret < 0) {
             data.create_err = 1;
@@ -374,6 +357,25 @@ static __always_inline int netdata_common_vfs_create(int ret)
         data.create_call = 1;
 
         bpf_map_update_elem(&tbl_vfs_pid, &key, &data, BPF_ANY);
+    }
+
+    return 0;
+}
+
+static inline int netdata_release_task_vfs()
+{
+    struct netdata_vfs_stat_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&vfs_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_vfs_pid, &key);
     }
 
     return 0;
@@ -519,6 +521,12 @@ int BPF_KRETPROBE(netdata_vfs_create_kretprobe)
     int ret = (int)PT_REGS_RC(ctx);
 
     return netdata_common_vfs_create(ret);
+}
+
+SEC("kprobe/release_task")
+int BPF_KRETPROBE(netdata_vfs_release_task_kprobe)
+{
+    return netdata_release_task_vfs();
 }
 
 /************************************************************************************
@@ -668,6 +676,12 @@ int BPF_PROG(netdata_vfs_create_fexit, struct inode *dir, struct dentry *dentry,
     return netdata_common_vfs_create(ret);
 }
 */
+
+SEC("fentry/release_task")
+int BPF_PROG(netdata_vfs_release_task_fentry)
+{
+    return netdata_release_task_vfs();
+}
 
 char _license[] SEC("license") = "GPL";
 

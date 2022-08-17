@@ -34,7 +34,7 @@ struct {
 
 /************************************************************************************
  *
- *                           COMMON SECTION(kprobe)
+ *                           COMMON SECTION
  *
  ***********************************************************************************/
 
@@ -49,6 +49,20 @@ static inline int netdata_are_apps_enabled()
     return 1;
 }
 
+static inline void netdata_fill_common_fd_data(struct netdata_fd_stat_t *data)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+
+    data->pid_tgid = pid_tgid;
+    data->pid = tgid;
+}
+
+/************************************************************************************
+ *
+ *                           KPROBE SECTION
+ *
+ ***********************************************************************************/
 static inline int netdata_apps_do_sys_openat2(long ret)
 {
     struct netdata_fd_stat_t *fill;
@@ -57,25 +71,21 @@ static inline int netdata_apps_do_sys_openat2(long ret)
     if (!netdata_are_apps_enabled())
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_fd_pid ,&key);
+    __u32 key;
+    fill = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
     if (fill) {
         libnetdata_update_u32(&fill->open_call, 1) ;
         if (ret < 0) 
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_fd_data(&data);
+        data.open_call = 1;
         if (ret < 0)
             data.open_err = 1;
 
+        bpf_map_update_elem(&tbl_fd_pid, &key, &data, BPF_ANY);
     }
 
-    data.open_call = 1;
-
-    bpf_map_update_elem(&tbl_fd_pid, &key, &data, BPF_ANY);
 
     return 0;
 }
@@ -96,16 +106,14 @@ static inline int netdata_apps_close_fd(int ret)
     if (!netdata_are_apps_enabled())
         return 0;
 
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 key = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    fill = bpf_map_lookup_elem(&tbl_fd_pid ,&key);
+    __u32 key;
+    fill = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
     if (fill) {
         libnetdata_update_u32(&fill->close_call, 1) ;
-
+        if (ret < 0)
+            libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
-        data.pid_tgid = pid_tgid;  
-        data.pid = tgid;  
+        netdata_fill_common_fd_data(&data);
         data.close_call = 1;
         if (ret < 0)
             data.close_err = 1;
@@ -122,6 +130,25 @@ static inline void netdata_close_global(int ret)
         libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_ERROR_CLOSE_FD, 1);
 
     libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_CALLS_CLOSE_FD, 1);
+}
+
+static inline int netdata_release_task_fd()
+{
+    struct netdata_fd_stat_t *removeme;
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&fd_ctrl ,&key);
+    if (apps) {
+        if (*apps == 0)
+            return 0;
+    } else
+        return 0;
+
+    removeme = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
+    if (removeme) {
+        bpf_map_delete_elem(&tbl_fd_pid, &key);
+    }
+
+    return 0;
 }
 
 /************************************************************************************
@@ -181,6 +208,12 @@ int BPF_KPROBE(netdata___close_fd_kprobe)
     return netdata_apps_close_fd(0);
 }
 
+SEC("kprobe/release_task")
+int BPF_KPROBE(netdata_release_task_fd_kprobe)
+{
+    return netdata_release_task_fd();
+}
+
 /************************************************************************************
  *
  *                           FD SECTION(trampoline)
@@ -234,6 +267,13 @@ int BPF_PROG(netdata___close_fd_fexit, struct files_struct *files, unsigned fd, 
 
     return netdata_apps_close_fd(ret);
 }
+
+SEC("kprobe/release_task")
+int BPF_PROG(netdata_release_task_fd_fentry)
+{
+    return netdata_release_task_fd();
+}
+
 
 char _license[] SEC("license") = "GPL";
 

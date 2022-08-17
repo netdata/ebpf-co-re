@@ -10,19 +10,23 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "netdata_vfs.h"
 
 #include "vfs.skel.h"
 
 char *function_list[] = { "vfs_write",
                           "vfs_writev",
-                          "vfs_read", 
+                          "vfs_read",
                           "vfs_readv",
                           "vfs_unlink",
                           "vfs_fsync",
                           "vfs_open",
-                          "vfs_create"
+                          "vfs_create",
+                          "release_task"
 };
+// This preprocessor is defined here, because it is not useful in kernel-colector
+#define NETDATA_VFS_RELEASE_TASK 8
 
 static inline void ebpf_disable_probes(struct vfs_bpf *obj)
 {
@@ -42,6 +46,7 @@ static inline void ebpf_disable_probes(struct vfs_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_kretprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_vfs_release_task_kprobe, false);
 }
 
 static inline void ebpf_disable_trampoline(struct vfs_bpf *obj)
@@ -61,6 +66,7 @@ static inline void ebpf_disable_trampoline(struct vfs_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_vfs_release_task_fentry, false);
 //    bpf_program__set_autoload(obj->progs.netdata_vfs_create_fexit, false);
 }
 
@@ -110,6 +116,9 @@ static void ebpf_set_trampoline_target(struct vfs_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_vfs_create_fentry, 0,
                                    function_list[NETDATA_VFS_CREATE]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_vfs_release_task_fentry, 0,
+                                   function_list[NETDATA_VFS_RELEASE_TASK]);
 
 //    bpf_program__set_attach_target(obj->progs.netdata_vfs_create_fexit, 0,
 //                                   function_list[NETDATA_VFS_CREATE]);
@@ -210,17 +219,22 @@ static int ebpf_attach_probes(struct vfs_bpf *obj)
         return -1;
 
     obj->links.netdata_vfs_create_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_vfs_create_kprobe,
-                                                                      false, function_list[NETDATA_VFS_OPEN]);
+                                                                      false, function_list[NETDATA_VFS_CREATE]);
     ret = libbpf_get_error(obj->links.netdata_vfs_create_kprobe);
     if (ret)
         return -1;
 
     obj->links.netdata_vfs_create_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_vfs_create_kretprobe,
-                                                                         true, function_list[NETDATA_VFS_OPEN]);
+                                                                         true, function_list[NETDATA_VFS_CREATE]);
     ret = libbpf_get_error(obj->links.netdata_vfs_create_kretprobe);
     if (ret)
         return -1;
  
+    obj->links.netdata_vfs_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_vfs_release_task_kprobe,
+                                                                           true, function_list[NETDATA_VFS_RELEASE_TASK]);
+    ret = libbpf_get_error(obj->links.netdata_vfs_release_task_kprobe);
+    if (ret)
+        return -1;
     return 0;
 }
 
@@ -262,23 +276,22 @@ static int vfs_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_pid)
     if (!stored)
         return 2;
 
+    int key, next_key;
+    key = next_key = 0;
     uint64_t counter = 0;
-    if (!bpf_map_lookup_elem(fd, &my_pid, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].pid_tgid + stored[j].pid + stored[j].write_call + stored[j].writev_call +
-                        stored[j].read_call + stored[j].readv_call + stored[j].unlink_call + stored[j].fsync_call +
-                        stored[j].open_call + stored[j].create_call + stored[j].write_bytes + stored[j].writev_bytes +
-                        stored[j].readv_bytes + stored[j].read_bytes + stored[j].write_err + stored[j].writev_err +
-                        stored[j].read_err + stored[j].readv_err + stored[j].unlink_err + stored[j].fsync_err +
-                        stored[j].fsync_err + stored[j].open_err + stored[j].create_err);
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs * sizeof(struct netdata_vfs_stat_t));
+
+        key = next_key;
     }
 
     free(stored);
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success\n");
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -304,7 +317,7 @@ static pid_t ebpf_update_tables(int global, int apps)
     return pid;
 }
 
-static int ebpf_vfs_tests(int selector)
+static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
 {
     struct vfs_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -319,12 +332,13 @@ static int ebpf_vfs_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.vfs_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.vfs_ctrl, map_level);
 
         fd = bpf_map__fd(obj->maps.tbl_vfs_stats);
         int fd2 = bpf_map__fd(obj->maps.tbl_vfs_pid);
         pid_t my_pid = ebpf_update_tables(fd, fd2);
 
+        sleep(60);
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_VFS_COUNTER);
         if (!ret) {
             ret = vfs_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
@@ -346,36 +360,43 @@ static int ebpf_vfs_tests(int selector)
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
-        {"help",        no_argument,    0,  'h' },
-        {"probe",       no_argument,    0,  'p' },
-        {"tracepoint",  no_argument,    0,  'r' },
-        {"trampoline",  no_argument,    0,  't' },
+        {"help",        no_argument,    0,  0 },
+        {"probe",       no_argument,    0,  0 },
+        {"tracepoint",  no_argument,    0,  0 },
+        {"trampoline",  no_argument,    0,  0 },
+        {"pid",         required_argument,    0,  0 },
         {0, 0, 0, 0}
     };
 
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
-        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        int c = getopt_long_only(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
-                          ebpf_print_help(argv[0], "vfs", 1);
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
+                          ebpf_core_print_help(argv[0], "vfs", 1, 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_PROBE;
                           fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead\n");
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -402,6 +423,6 @@ int main(int argc, char **argv)
         }
     }
 
-    return ebpf_vfs_tests(selector);
+    return ebpf_vfs_tests(selector, map_level);
 }
 
