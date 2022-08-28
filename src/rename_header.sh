@@ -19,9 +19,8 @@ select_kernel_version() {
     KVER=$(parse_kernel_version "${1}" "${2}")
     
     VER5_19_0="005019"
-    VER5_15_0="005015"
 
-    if [ "${KVER}" -eq "${VER5_15_0}" ]; then
+    if [ "${KVER}" -lt "${VER5_19_0}" ]; then
         KSELECTED="508";
     else
         KSELECTED="519";
