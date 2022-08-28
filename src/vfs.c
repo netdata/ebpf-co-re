@@ -309,10 +309,14 @@ static pid_t ebpf_update_tables(int global, int apps)
                                         .writev_err = 1, .read_err = 1, .readv_err = 1, .unlink_err = 1,
                                         .fsync_err = 1, .open_err = 1, .create_err = 1 };
 
-    uint32_t idx = (uint32_t)pid;
-    int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
-    if (ret)
-        fprintf(stderr, "Cannot insert value to apps table.");
+    uint32_t idx;
+    for (idx = 0 ; idx < NETDATA_EBPF_CORE_MIN_STORE; idx++) {
+        int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
+        if (ret) {
+            fprintf(stderr, "Cannot insert value to global table.");
+            break;
+        }
+    }
 
     return pid;
 }
