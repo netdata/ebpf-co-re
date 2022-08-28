@@ -1,4 +1,9 @@
+#if MY_LINUX_VERSION_CODE >= 332548
+#include "vmlinux_519.h"
+#else
 #include "vmlinux_508.h"
+#endif
+
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 #include "bpf_core_read.h"
@@ -705,8 +710,11 @@ int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
 }
 
 SEC("fexit/udp_recvmsg")
-int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len, int noblock,
-		int flags, int *addr_len, int ret)
+int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len,
+#if MY_LINUX_VERSION_CODE < 332544
+             int noblock,
+#endif
+             int flags, int *addr_len, int ret)
 {
     struct inet_sock *is = (struct inet_sock *)(sk);
     __u64 received = (__u64) ret;

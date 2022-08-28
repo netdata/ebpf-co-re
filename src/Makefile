@@ -40,11 +40,12 @@ libbpf:
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) $(INCLUDES) -ggdb -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
+	$(CLANG) $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
 	bpftool gen skeleton $< > ../includes/$@
+	/bin/bash ./rename_header.sh "${VER_MAJOR}" "${VER_MINOR}" "${@}"
 
 $(patsubst %,%.o,$(APPS)): %.o: %.skel.h
 

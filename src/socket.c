@@ -16,7 +16,11 @@
 #include "netdata_core_common.h"
 #include "netdata_socket.h"
 
-#include "socket.skel.h"
+#if MY_LINUX_VERSION_CODE >= 332548
+#include "socket_519.skel.h"
+#else
+#include "socket_508.skel.h"
+#endif
 
 // Socket functions
 char *function_list[] = { "inet_csk_accept",
