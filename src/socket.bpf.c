@@ -1,4 +1,4 @@
-#if MY_LINUX_VERSION_CODE >= 332548
+#if MY_LINUX_VERSION_CODE >= NETDATA_EBPF_KERNEL_5_19_0
 #include "vmlinux_519.h"
 #else
 #include "vmlinux_508.h"
@@ -711,7 +711,7 @@ int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
 
 SEC("fexit/udp_recvmsg")
 int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len,
-#if MY_LINUX_VERSION_CODE < 332544
+#if MY_LINUX_VERSION_CODE < NETDATA_EBPF_KERNEL_5_19_0
              int noblock,
 #endif
              int flags, int *addr_len, int ret)
