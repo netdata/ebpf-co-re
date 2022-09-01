@@ -392,7 +392,7 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         sleep(60);
 
         // Separator between load and result
-        fprintf(stderr, "\n=================  READ DATA =================\n\n");
+        fprintf(stdout, "\n=================  READ DATA =================\n\n");
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SOCKET_COUNTER);
         if (!ret) {
 
@@ -404,7 +404,7 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
             ret += netdata_read_local_ports(obj);
 
             if (!ret)
-                fprintf(stderr, "All stored data were retrieved with success!\n");
+                fprintf(stdout, "All stored data were retrieved with success!\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {
