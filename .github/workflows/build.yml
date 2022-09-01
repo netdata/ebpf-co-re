@@ -13,7 +13,6 @@ jobs:
       matrix:
         kernel_version:
           - '5.15.63'
-          - '5.19.4'
         libc:
           - glibc
     runs-on: ubuntu-latest

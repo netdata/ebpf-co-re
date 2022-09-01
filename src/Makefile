@@ -34,13 +34,6 @@ APPS = cachestat \
        vfs \
        #
 
-ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 332544 -a -z ${NETDATA_DEV}; echo $$?),0)
-	NETDATA_APPS= socket \
-              #
-else
-	NETDATA_APPS= ${APPS}
-endif
-
 all: compress
 
 libbpf:
@@ -52,17 +45,16 @@ libbpf:
 
 %.skel.h: %.bpf.o
 	bpftool gen skeleton $< > ../includes/$@
-	/bin/bash ./rename_header.sh "${VER_MAJOR}" "${VER_MINOR}" "${@}"
 
-$(patsubst %,%.o,$(NETDATA_APPS)): %.o: %.skel.h
+$(patsubst %,%.o,$(APPS)): %.o: %.skel.h
 
 %.o: %.c 
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-$(NETDATA_APPS): %: %.o
+$(APPS): %: %.o
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
-compress: $(NETDATA_APPS)
+compress: $(APPS)
 
 clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz
