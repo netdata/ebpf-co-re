@@ -19,6 +19,8 @@ enum NETDATA_EBPF_CORE_IDX {
 
 #define NETDATA_EBPF_CORE_MIN_STORE 128
 
+#define NETDATA_EBPF_KERNEL_5_19_0 332544
+
 /**
  * Fill Control table
  *

@@ -1,4 +1,4 @@
-#include "vmlinux.h"
+#include "vmlinux_508.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 
@@ -268,7 +268,7 @@ int BPF_PROG(netdata___close_fd_fexit, struct files_struct *files, unsigned fd, 
     return netdata_apps_close_fd(ret);
 }
 
-SEC("kprobe/release_task")
+SEC("fentry/release_task")
 int BPF_PROG(netdata_release_task_fd_fentry)
 {
     return netdata_release_task_fd();

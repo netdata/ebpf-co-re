@@ -8,7 +8,7 @@ ARCH := $(shell uname -m | sed 's/x86_64/x86/')
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 			 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }') 
 KERNEL_VERSION="$(shell cat /proc/sys/kernel/osrelease)"
-FIRST_KERNEL_VERSION=$(shell sh ../tools/complement.sh "$(KERNEL_VERSION)")
+FIRST_KERNEL_VERSION=$(shell sh ../kernel-collector/tools/complement.sh "$(KERNEL_VERSION)")
 VER_MAJOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f1)
 VER_MINOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f2)
 VER_PATCH=$(shell echo $(KERNEL_VERSION) | cut -d. -f3 | cut -d\- -f1)
@@ -40,7 +40,7 @@ libbpf:
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) $(INCLUDES) -ggdb -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
+	$(CLANG) $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
@@ -51,7 +51,7 @@ $(patsubst %,%.o,$(APPS)): %.o: %.skel.h
 %.o: %.c 
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-$(APPS): %: %.o 
+$(APPS): %: %.o
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
 compress: $(APPS)

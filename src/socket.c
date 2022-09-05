@@ -230,17 +230,24 @@ static inline pid_t update_global(struct socket_bpf *obj)
     return ebpf_fill_global(fd);
 }
 
-static inline int netdata_update_bandwidth(pid_t my_pid, struct socket_bpf *obj)
+static inline int netdata_update_bandwidth(struct socket_bpf *obj)
 {
-    netdata_bandwidth_t bandwidth = { .pid = (__u32) my_pid, .first = 123456789, .ct = 123456790,
+    netdata_bandwidth_t bandwidth = { .pid = 0, .first = 123456789, .ct = 123456790,
                                       .bytes_sent = 1, .bytes_received = 1, .call_tcp_sent = 1,
                                       .call_tcp_received = 1, .retransmit = 1, .call_udp_sent = 1,
                                       .call_udp_received = 1 };
-    uint32_t idx = (uint32_t)my_pid;
+
+    uint32_t my_pid;
     int apps = bpf_map__fd(obj->maps.tbl_bandwidth);
-    int ret = bpf_map_update_elem(apps, &idx, &bandwidth, 0);
-    if (ret)
-        fprintf(stderr, "Cannot insert value to bandwidth table.\n");
+    int ret = 0;
+    for (my_pid = 0 ; my_pid < NETDATA_EBPF_CORE_MIN_STORE; my_pid++) {
+        bandwidth.pid = my_pid;
+        int ret = bpf_map_update_elem(apps, &my_pid, &bandwidth, 0);
+        if (ret) {
+            fprintf(stderr, "Cannot insert value to global table.");
+            break;
+        }
+    }
 
     return ret;
 }
@@ -270,7 +277,7 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
 {
     pid_t my_pid = update_global(obj);
 
-    int has_error = netdata_update_bandwidth(my_pid, obj);
+    int has_error = netdata_update_bandwidth(obj);
 
     int fd = bpf_map__fd(obj->maps.tbl_conn_ipv4);
     has_error += update_socket_tables(fd, idx, values);
@@ -293,20 +300,22 @@ static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_np
         return 2;
 
     uint64_t counter = 0;
-    uint32_t idx = (uint32_t)pid;
-    int apps = bpf_map__fd(obj->maps.tbl_bandwidth);
-    if (!bpf_map_lookup_elem(apps, &idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].first + stored[j].ct + stored[j].bytes_sent + stored[j].bytes_received + 
-                        stored[j].call_tcp_sent + stored[j].call_tcp_received + stored[j].retransmit +
-                        stored[j].call_udp_sent + stored[j].call_udp_received);
+    int key, next_key;
+    key = next_key = 0;
+    int fd = bpf_map__fd(obj->maps.tbl_bandwidth);
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
         }
+        memset(stored, 0, ebpf_nprocs * sizeof(netdata_bandwidth_t));
+
+        key = next_key;
     }
 
     free(stored);
 
     if (counter) {
+        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
     }
 
@@ -357,7 +366,7 @@ static int netdata_read_local_ports(struct socket_bpf *obj)
     return 2;
 }
 
-int ebpf_socket_tests(int selector)
+int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
 {
     struct socket_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -372,7 +381,7 @@ int ebpf_socket_tests(int selector)
     int ret = ebpf_load_and_attach(obj, selector);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.socket_ctrl);
-        update_controller_table(fd);
+        ebpf_core_fill_ctrl(obj->maps.socket_ctrl, map_level);
 
         netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1 };
         netdata_socket_t values = { .recv_packets = 1, .sent_packets = 1, .recv_bytes = 1, .sent_bytes = 1,
@@ -380,8 +389,10 @@ int ebpf_socket_tests(int selector)
                                     .reserved = 1 }; 
         pid_t my_pid = ebpf_update_tables(obj, &common_idx, &values);
 
+        sleep(60);
+
         // Separator between load and result
-        fprintf(stderr, "\n=================  READ DATA =================\n\n");
+        fprintf(stdout, "\n=================  READ DATA =================\n\n");
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SOCKET_COUNTER);
         if (!ret) {
 
@@ -393,7 +404,7 @@ int ebpf_socket_tests(int selector)
             ret += netdata_read_local_ports(obj);
 
             if (!ret)
-                fprintf(stderr, "All stored data were retrieved with success!\n");
+                fprintf(stdout, "All stored data were retrieved with success!\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {
@@ -409,36 +420,43 @@ int ebpf_socket_tests(int selector)
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
-        {"help",        no_argument,    0,  'h' },
-        {"probe",       no_argument,    0,  'p' },
-        {"tracepoint",  no_argument,    0,  'r' },
-        {"trampoline",  no_argument,    0,  't' },
-        {0, 0, 0, 0}
+        {"help",        no_argument,    0,  0 },
+        {"probe",       no_argument,    0,  0 },
+        {"tracepoint",  no_argument,    0,  0 },
+        {"trampoline",  no_argument,    0,  0 },
+        {"pid",         required_argument,    0,  0 },
+        {0,             no_argument, 0, 0}
     };
 
     int selector = NETDATA_MODE_TRAMPOLINE;
     int option_index = 0;
+    enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {
-        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        int c = getopt_long_only(argc, argv, "", long_options, &option_index);
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
+        switch (option_index) {
+            case NETDATA_EBPF_CORE_IDX_HELP: {
                           ebpf_core_print_help(argv[0], "socket", 1, 1);
                           exit(0);
                       }
-            case 'p': {
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
                           selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
                           selector = NETDATA_MODE_PROBE;
                           fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead\n");
                           break;
                       }
-            case 't': {
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
+                          break;
+                      }
+            case NETDATA_EBPF_CORE_IDX_PID: {
+                          int user_input = (int)strtol(optarg, NULL, 10);
+                          map_level = ebpf_check_map_level(user_input);
                           break;
                       }
             default: {
@@ -456,6 +474,6 @@ int main(int argc, char **argv)
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    return ebpf_socket_tests(selector);
+    return ebpf_socket_tests(selector, map_level);
 }
 

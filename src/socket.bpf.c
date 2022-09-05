@@ -1,4 +1,9 @@
-#include "vmlinux.h"
+#if MY_LINUX_VERSION_CODE >= NETDATA_EBPF_KERNEL_5_19_0
+#include "vmlinux_519.h"
+#else
+#include "vmlinux_508.h"
+#endif
+
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 #include "bpf_core_read.h"
@@ -705,13 +710,11 @@ int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
 }
 
 SEC("fexit/udp_recvmsg")
-int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len, int noblock,
-		int flags, int *addr_len, int ret)
+int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len)
 {
     struct inet_sock *is = (struct inet_sock *)(sk);
-    __u64 received = (__u64) ret;
 
-    return netdata_common_udp_recvmsg_return(is, received);
+    return netdata_common_udp_recvmsg_return(is, (__u64)len);
 }
 
 SEC("fentry/tcp_sendmsg")
