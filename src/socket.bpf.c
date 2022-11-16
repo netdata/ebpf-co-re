@@ -264,43 +264,36 @@ static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u
 
         b->ct = bpf_ktime_get_ns();
 
-        if (sent)
+        if (sent) {
             libnetdata_update_u64(&b->bytes_sent, sent);
 
-        if (received)
+            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_sent : &b->call_udp_sent, 1);
+        } else if (received) {
             libnetdata_update_u64(&b->bytes_received, received);
 
-        if (protocol == IPPROTO_TCP) {
-            if (sent) {
-                libnetdata_update_u64(&b->call_tcp_sent, 1);
-            } else if (received) {
-                libnetdata_update_u64(&b->call_tcp_received, 1);
-            } else {
-                libnetdata_update_u64(&b->retransmit, 1);
-            }
+            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_received : &b->call_udp_received, 1);
         } else {
-                libnetdata_update_u64((sent) ? &b->call_udp_sent : &b->call_udp_received, 1);
-        } 
+            libnetdata_update_u64(&b->retransmit, 1);
+        }
     } else {
         data.pid = tgid;
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        data.bytes_sent = sent;
         data.bytes_received = received;
-        if (protocol == IPPROTO_TCP) {
-            if (sent) {
+        if (sent) {
+            data.bytes_sent = sent;
+            if (protocol == IPPROTO_TCP)
                 data.call_tcp_sent = 1;
-            } else if (received) {
-                data.call_tcp_received = 1;
-            } else {
-                data.retransmit = 1;
-            }
-        } else {
-            if (sent) {
+            else
                 data.call_udp_sent = 1;
-            } else {
+        } else if (received) {
+            data.bytes_received = received;
+            if (protocol == IPPROTO_TCP)
+                data.call_tcp_received = 1;
+            else
                 data.call_udp_received = 1;
-            }
+        } else {
+            data.retransmit = 1;
         }
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
