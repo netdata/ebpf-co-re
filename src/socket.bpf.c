@@ -449,8 +449,6 @@ static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
 
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
-
     struct sock **skpp = bpf_map_lookup_elem(&tbl_nv_udp, &pid_tgid);
     if (skpp == 0) {
         return 0;
