@@ -128,13 +128,10 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr, __u64 sen
 
 // Use __always_inline instead inline to keep compatiblity with old kernels
 // https://docs.cilium.io/en/v1.8/bpf/
-// The condition to test kernel was added, because __always_inline broke the epbf.plugin
-// on CentOS 7 and Ubuntu 18.04 (kernel 4.18)
 static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u64 sent,
                                                 __u64 received,
-                                                __u32 retransmitted,
-                                                __u16 protocol)
+                                                __u32 retransmitted)
 {
     __u16 family;
     void *tbl;
@@ -152,15 +149,10 @@ static __always_inline void update_socket_table(struct inet_sock *is,
     val = (netdata_socket_t *) bpf_map_lookup_elem(tbl, &idx);
     if (val) {
         update_socket_stats(val, sent, received, retransmitted);
-        if (protocol == IPPROTO_UDP)
-            bpf_map_delete_elem(tbl, &idx);
     } else {
         // This will be present while we do not have network viewer.
-        if (protocol == IPPROTO_UDP && received)
-            return;
-
         data.first = bpf_ktime_get_ns();
-        data.protocol = protocol;
+        data.protocol = IPPROTO_TCP;
         update_socket_stats(&data, sent, received, retransmitted);
 
         bpf_map_update_elem(tbl, &idx, &data, BPF_ANY);
@@ -272,43 +264,36 @@ static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u
 
         b->ct = bpf_ktime_get_ns();
 
-        if (sent)
+        if (sent) {
             libnetdata_update_u64(&b->bytes_sent, sent);
 
-        if (received)
+            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_sent : &b->call_udp_sent, 1);
+        } else if (received) {
             libnetdata_update_u64(&b->bytes_received, received);
 
-        if (protocol == IPPROTO_TCP) {
-            if (sent) {
-                libnetdata_update_u64(&b->call_tcp_sent, 1);
-            } else if (received) {
-                libnetdata_update_u64(&b->call_tcp_received, 1);
-            } else {
-                libnetdata_update_u64(&b->retransmit, 1);
-            }
+            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_received : &b->call_udp_received, 1);
         } else {
-                libnetdata_update_u64((sent) ? &b->call_udp_sent : &b->call_udp_received, 1);
-        } 
+            libnetdata_update_u64(&b->retransmit, 1);
+        }
     } else {
         data.pid = tgid;
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        data.bytes_sent = sent;
         data.bytes_received = received;
-        if (protocol == IPPROTO_TCP) {
-            if (sent) {
+        if (sent) {
+            data.bytes_sent = sent;
+            if (protocol == IPPROTO_TCP)
                 data.call_tcp_sent = 1;
-            } else if (received) {
-                data.call_tcp_received = 1;
-            } else {
-                data.retransmit = 1;
-            }
-        } else {
-            if (sent) {
+            else
                 data.call_udp_sent = 1;
-            } else {
+        } else if (received) {
+            data.bytes_received = received;
+            if (protocol == IPPROTO_TCP)
+                data.call_tcp_received = 1;
+            else
                 data.call_udp_received = 1;
-            }
+        } else {
+            data.retransmit = 1;
         }
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
@@ -334,7 +319,7 @@ static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, (__u16)IPPROTO_TCP);
+    update_socket_table(is, sent, 0, 0);
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_SENDMSG, sent);
 
     update_pid_table((__u64)sent, 0, IPPROTO_TCP);
@@ -351,7 +336,7 @@ static __always_inline int common_udp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, (__u16)IPPROTO_UDP);
+    update_socket_table(is, sent, 0, 0);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_SENDMSG, (__u64) sent);
 
@@ -400,7 +385,7 @@ static inline int netdata_common_tcp_retransmit(struct inet_sock *is)
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_RETRANSMIT, 1);
 
-    update_socket_table(is, 0, 0, 1, (__u16)IPPROTO_TCP);
+    update_socket_table(is, 0, 0, 1);
 
     update_pid_table(0, 0, IPPROTO_TCP);
 
@@ -416,7 +401,7 @@ static inline int netdata_common_tcp_cleanup_rbuf(int copied, struct inet_sock *
         return 0;
     }
 
-    update_socket_table(is, 0, (__u64)copied, 1, (__u16)IPPROTO_TCP);
+    update_socket_table(is, 0, (__u64)copied, 1);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_CLEANUP_RBUF, received);
 
@@ -464,15 +449,12 @@ static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
 
-    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_UDP_RECVMSG, 1);
-
     struct sock **skpp = bpf_map_lookup_elem(&tbl_nv_udp, &pid_tgid);
     if (skpp == 0) {
         return 0;
     }
 
     bpf_map_delete_elem(&tbl_nv_udp, &pid_tgid);
-    update_socket_table(is, 0, received, 0, (__u16)IPPROTO_UDP);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
