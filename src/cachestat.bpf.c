@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline int netdata_cachetat_not_update_apps(__u32 idx)
+static __always_inline int netdata_cachetat_not_update_apps(__u32 idx)
 {
     libnetdata_update_global(&cstat_global, idx, 1);
 
@@ -50,7 +50,7 @@ static inline int netdata_cachetat_not_update_apps(__u32 idx)
     return 1;
 }
 
-static inline int netdata_common_page_cache_lru()
+static __always_inline int netdata_common_page_cache_lru()
 {
     netdata_cachestat_t *fill, data = {};
 
@@ -69,7 +69,7 @@ static inline int netdata_common_page_cache_lru()
     return 0;
 }
 
-static inline int netdata_common_page_accessed()
+static __always_inline int netdata_common_page_accessed()
 {
     netdata_cachestat_t *fill, data = {};
 
@@ -88,7 +88,7 @@ static inline int netdata_common_page_accessed()
     return 0;
 }
 
-static inline int netdata_common_page_dirtied()
+static __always_inline int netdata_common_page_dirtied()
 {
     netdata_cachestat_t *fill, data = {};
 
@@ -107,7 +107,7 @@ static inline int netdata_common_page_dirtied()
     return 0;
 }
 
-static inline int netdata_common_buffer_dirty()
+static __always_inline int netdata_common_buffer_dirty()
 {
     netdata_cachestat_t *fill, data = {};
 
@@ -126,7 +126,7 @@ static inline int netdata_common_buffer_dirty()
     return 0;
 }
 
-static inline int netdata_release_task_cstat()
+static __always_inline int netdata_release_task_cstat()
 {
     netdata_cachestat_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
