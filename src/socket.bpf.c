@@ -5,6 +5,7 @@
 #endif
 
 #include "bpf_tracing.h"
+#include "bpf_endian.h"
 #include "bpf_helpers.h"
 #include "bpf_core_read.h"
 
@@ -105,6 +106,9 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     //Read ports
     BPF_CORE_READ_INTO(&nsi->dport, is, sk.__sk_common.skc_dport);
     BPF_CORE_READ_INTO(&nsi->sport, is, sk.__sk_common.skc_num);
+
+    nsi->dport = bpf_ntohs(nsi->dport);
+    nsi->sport = bpf_ntohs(nsi->sport);
 
     return family;
 }
@@ -279,7 +283,6 @@ static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u
         data.pid = tgid;
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        data.bytes_received = received;
         if (sent) {
             data.bytes_sent = sent;
             if (protocol == IPPROTO_TCP)
@@ -345,7 +348,7 @@ static __always_inline int common_udp_send_message(struct inet_sock *is, size_t 
     return 0;
 }
 
-static inline int netdata_common_inet_csk_accept(struct sock *sk)
+static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
 {
     if (!sk)
         return 0;
@@ -380,7 +383,7 @@ static inline int netdata_common_inet_csk_accept(struct sock *sk)
     return 0;
 }
 
-static inline int netdata_common_tcp_retransmit(struct inet_sock *is)
+static __always_inline int netdata_common_tcp_retransmit(struct inet_sock *is)
 {
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_RETRANSMIT, 1);
@@ -392,7 +395,7 @@ static inline int netdata_common_tcp_retransmit(struct inet_sock *is)
     return 0;
 }
 
-static inline int netdata_common_tcp_cleanup_rbuf(int copied, struct inet_sock *is, __u64 received)
+static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct inet_sock *is, __u64 received)
 {
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_CLEANUP_RBUF, 1);
 
@@ -410,7 +413,7 @@ static inline int netdata_common_tcp_cleanup_rbuf(int copied, struct inet_sock *
     return 0;
 }
 
-static inline int netdata_common_tcp_close(struct inet_sock *is)
+static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
 {
     void *tbl;
     netdata_socket_t *val;
@@ -444,7 +447,7 @@ static inline int netdata_common_udp_recvmsg(struct sock *sk)
     return 0;
 }
 
-static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 received)
+static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 received)
 {
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -463,7 +466,7 @@ static inline int netdata_common_udp_recvmsg_return(struct inet_sock *is, __u64 
     return 0;
 }
 
-static inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
+static __always_inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
                                              enum socket_counters err, __u8 version)
 {
     libnetdata_update_global(&tbl_global_sock, success, 1);
@@ -641,12 +644,18 @@ int BPF_KPROBE(netdata_socket_release_task_kprobe)
 SEC("fentry/inet_csk_accept")
 int BPF_PROG(netdata_inet_csk_accept_fentry, struct sock *sk)
 {
+    if (!sk)
+        return 0;
+
     return netdata_common_inet_csk_accept(sk);
 }
 
 SEC("fexit/tcp_v4_connect")
 int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
 {
+    if (!sk)
+        return 0;
+
     return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
 }
@@ -654,6 +663,9 @@ int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uad
 SEC("fexit/tcp_v6_connect")
 int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
 {
+    if (!sk)
+        return 0;
+
     return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV6, 6);
 }
@@ -661,6 +673,9 @@ int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uad
 SEC("fentry/tcp_retransmit_skb")
 int BPF_PROG(netdata_tcp_retransmit_skb_fentry, struct sock *sk)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return netdata_common_tcp_retransmit(is);
@@ -670,6 +685,9 @@ int BPF_PROG(netdata_tcp_retransmit_skb_fentry, struct sock *sk)
 SEC("fentry/tcp_cleanup_rbuf")
 int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)sk;
     __u64 received = (__u64) copied;
 
@@ -679,6 +697,9 @@ int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
 SEC("fentry/tcp_close")
 int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return netdata_common_tcp_close(is);
@@ -688,12 +709,18 @@ int BPF_PROG(netdata_tcp_close_fentry, struct sock *sk)
 SEC("fentry/udp_recvmsg")
 int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
 {
+    if (!sk)
+        return 0;
+
     return netdata_common_udp_recvmsg(sk);
 }
 
 SEC("fexit/udp_recvmsg")
 int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)(sk);
 
     return netdata_common_udp_recvmsg_return(is, (__u64)len);
@@ -702,6 +729,9 @@ int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, siz
 SEC("fentry/tcp_sendmsg")
 int BPF_PROG(netdata_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t size)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return common_tcp_send_message(is, size, 0);
@@ -710,6 +740,9 @@ int BPF_PROG(netdata_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, si
 SEC("fexit/tcp_sendmsg")
 int BPF_PROG(netdata_tcp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, size_t size, int ret)
 {
+    if (!sk)
+        return 0;
+
     size_t sent = (ret > 0 )?(size_t) ret : 0;
 
     struct inet_sock *is = (struct inet_sock *)sk;
@@ -719,6 +752,9 @@ int BPF_PROG(netdata_tcp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
 SEC("fentry/udp_sendmsg")
 int BPF_PROG(netdata_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t len)
 {
+    if (!sk)
+        return 0;
+
     struct inet_sock *is = (struct inet_sock *)sk;
 
     return common_udp_send_message(is, len, 0);
@@ -728,6 +764,9 @@ int BPF_PROG(netdata_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, si
 SEC("fexit/udp_sendmsg")
 int BPF_PROG(netdata_udp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, size_t len, int ret)
 {
+    if (!sk)
+        return 0;
+
     size_t sent = (ret > 0 )?(size_t)ret : 0;
     struct inet_sock *is = (struct inet_sock *)sk;
 
