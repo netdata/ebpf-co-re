@@ -49,15 +49,6 @@ static inline int netdata_are_apps_enabled()
     return 1;
 }
 
-static inline void netdata_fill_common_fd_data(struct netdata_fd_stat_t *data)
-{
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-
-    data->pid_tgid = pid_tgid;
-    data->pid = tgid;
-}
-
 /************************************************************************************
  *
  *                           KPROBE SECTION
@@ -78,7 +69,6 @@ static inline int netdata_apps_do_sys_openat2(long ret)
         if (ret < 0) 
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
-        netdata_fill_common_fd_data(&data);
         data.open_call = 1;
         if (ret < 0)
             data.open_err = 1;
@@ -113,7 +103,6 @@ static inline int netdata_apps_close_fd(int ret)
         if (ret < 0)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
-        netdata_fill_common_fd_data(&data);
         data.close_call = 1;
         if (ret < 0)
             data.close_err = 1;
