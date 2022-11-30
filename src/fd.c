@@ -17,6 +17,13 @@
 
 #include "fd.skel.h"
 
+// Alma Linux modified internal name, this structure was brought for it.
+static ebpf_specify_name_t close_names[] = { {.program_name = "netdata_close_fd_kretprobe",
+                                              .function_to_attach = "close_fd",
+                                              .optional = NULL,
+                                              .retprobe = 0},
+                                             {.program_name = NULL}};
+
 char *function_list[] = { "do_sys_openat2",
 #if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
                           "close_fd",
@@ -257,6 +264,22 @@ static int ebpf_fd_tests(int selector, enum netdata_apps_level map_level)
     return ret;
 }
 
+static void ebpf_set_fd_names()
+{
+    ebpf_update_names(close_names);
+
+// Used to fix issue with RH 8.x family
+#if (MY_LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0))
+    if (close_names[0].optional) {
+        function_list[NETDATA_FD_CLOSE] = close_names[0].optional;
+    }
+#endif
+
+#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5, 5, 19))
+    function_list[NETDATA_FD_OPEN] = "do_sys_open";
+#endif
+}
+
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
@@ -314,9 +337,7 @@ int main(int argc, char **argv)
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5, 5, 19))
-    function_list[NETDATA_FD_OPEN] = "do_sys_open";
-#endif
+    ebpf_set_fd_names();
 
     struct btf *bf = NULL;
     if (!selector) {
