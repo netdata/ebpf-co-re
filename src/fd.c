@@ -20,16 +20,30 @@
 // Alma Linux modified internal name, this structure was brought for it.
 static ebpf_specify_name_t close_names[] = { {.program_name = "netdata_close_fd_kretprobe",
                                               .function_to_attach = "close_fd",
+                                              .length = 8,
+                                              .optional = NULL,
+                                              .retprobe = 0},
+                                             {.program_name = "netdata___close_fd_kretprobe",
+                                              .function_to_attach = "__close_fd",
+                                              .length = 10,
                                               .optional = NULL,
                                               .retprobe = 0},
                                              {.program_name = NULL}};
 
-char *function_list[] = { "do_sys_openat2",
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-                          "close_fd",
-#else
-                          "__close_fd",
-#endif
+static ebpf_specify_name_t open_names[] = { {.program_name = "netdata_sys_open_kprobe",
+                                              .function_to_attach = "do_sys_openat2",
+                                              .length = 14,
+                                              .optional = NULL,
+                                              .retprobe = 0},
+                                             {.program_name = "netdata_sys_open_kprobe",
+                                              .function_to_attach = "do_sys_open",
+                                              .length = 11,
+                                              .optional = NULL,
+                                              .retprobe = 0},
+                                             {.program_name = NULL}};
+
+char *function_list[] = { NULL,
+                          NULL,
                           "release_task"
                         };
 // This preprocessor is defined here, because it is not useful in kernel-colector
@@ -40,26 +54,26 @@ static inline void ebpf_disable_probes(struct fd_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_release_task_fd_kprobe, false);
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
-#endif
+    if (close_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
+    } else {
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_kretprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
+    }
 }
 
 static inline void ebpf_disable_specific_probes(struct fd_bpf *obj)
 {
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
-#endif
+    if (close_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
+    } else {
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_kretprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_kprobe, false);
+    }
 }
 
 static inline void ebpf_disable_trampoline(struct fd_bpf *obj)
@@ -75,13 +89,13 @@ static inline void ebpf_disable_trampoline(struct fd_bpf *obj)
 
 static inline void ebpf_disable_specific_trampoline(struct fd_bpf *obj)
 {
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata___close_fd_fexit, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_close_fd_fexit, false);
-#endif
+    if (close_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_fentry, false);
+        bpf_program__set_autoload(obj->progs.netdata___close_fd_fexit, false);
+    } else {
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_fentry, false);
+        bpf_program__set_autoload(obj->progs.netdata_close_fd_fexit, false);
+    }
 }
 
 static void ebpf_set_trampoline_target(struct fd_bpf *obj)
@@ -95,17 +109,17 @@ static void ebpf_set_trampoline_target(struct fd_bpf *obj)
     bpf_program__set_attach_target(obj->progs.netdata_release_task_fd_fentry, 0,
                                    function_list[NETDATA_FD_RELEASE_TASK]);
 
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-    bpf_program__set_attach_target(obj->progs.netdata_close_fd_fentry, 0,
-                                   function_list[NETDATA_FD_CLOSE]);
-    bpf_program__set_attach_target(obj->progs.netdata_close_fd_fexit, 0,
-                                   function_list[NETDATA_FD_CLOSE]);
-#else
-    bpf_program__set_attach_target(obj->progs.netdata___close_fd_fentry, 0,
-                                   function_list[NETDATA_FD_CLOSE]);
-    bpf_program__set_attach_target(obj->progs.netdata___close_fd_fexit, 0,
-                                   function_list[NETDATA_FD_CLOSE]);
-#endif
+    if (close_names[0].optional) {
+        bpf_program__set_attach_target(obj->progs.netdata_close_fd_fentry, 0,
+                                       function_list[NETDATA_FD_CLOSE]);
+        bpf_program__set_attach_target(obj->progs.netdata_close_fd_fexit, 0,
+                                       function_list[NETDATA_FD_CLOSE]);
+    } else {
+        bpf_program__set_attach_target(obj->progs.netdata___close_fd_fentry, 0,
+                                       function_list[NETDATA_FD_CLOSE]);
+        bpf_program__set_attach_target(obj->progs.netdata___close_fd_fexit, 0,
+                                       function_list[NETDATA_FD_CLOSE]);
+    }
 }
 
 static int ebpf_attach_probes(struct fd_bpf *obj)
@@ -122,31 +136,31 @@ static int ebpf_attach_probes(struct fd_bpf *obj)
     if (ret)
         return -1;
 
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-    obj->links.netdata_close_fd_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_close_fd_kretprobe,
-                                                                       true, function_list[NETDATA_FD_CLOSE]);
-    ret = libbpf_get_error(obj->links.netdata_close_fd_kretprobe);
-    if (ret)
-        return -1;
+    if (close_names[0].optional) {
+        obj->links.netdata_close_fd_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata_close_fd_kretprobe,
+                                                                           true, function_list[NETDATA_FD_CLOSE]);
+        ret = libbpf_get_error(obj->links.netdata_close_fd_kretprobe);
+        if (ret)
+            return -1;
 
-    obj->links.netdata_close_fd_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_close_fd_kprobe,
-                                                                    false, function_list[NETDATA_FD_CLOSE]);
-    ret = libbpf_get_error(obj->links.netdata_close_fd_kprobe);
-    if (ret)
-        return -1;
-#else
-    obj->links.netdata___close_fd_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata___close_fd_kretprobe,
-                                                                         true, function_list[NETDATA_FD_CLOSE]);
-    ret = libbpf_get_error(obj->links.netdata___close_fd_kretprobe);
-    if (ret)
-        return -1;
+        obj->links.netdata_close_fd_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_close_fd_kprobe,
+                                                                        false, function_list[NETDATA_FD_CLOSE]);
+        ret = libbpf_get_error(obj->links.netdata_close_fd_kprobe);
+        if (ret)
+            return -1;
+    } else {
+        obj->links.netdata___close_fd_kretprobe = bpf_program__attach_kprobe(obj->progs.netdata___close_fd_kretprobe,
+                                                                             true, function_list[NETDATA_FD_CLOSE]);
+        ret = libbpf_get_error(obj->links.netdata___close_fd_kretprobe);
+        if (ret)
+            return -1;
 
-    obj->links.netdata___close_fd_kprobe = bpf_program__attach_kprobe(obj->progs.netdata___close_fd_kprobe,
-                                                                      false, function_list[NETDATA_FD_CLOSE]);
-    ret = libbpf_get_error(obj->links.netdata___close_fd_kprobe);
-    if (ret)
-        return -1;
-#endif
+        obj->links.netdata___close_fd_kprobe = bpf_program__attach_kprobe(obj->progs.netdata___close_fd_kprobe,
+                                                                          false, function_list[NETDATA_FD_CLOSE]);
+        ret = libbpf_get_error(obj->links.netdata___close_fd_kprobe);
+        if (ret)
+            return -1;
+    }
 
     return 0;
 }
@@ -268,16 +282,21 @@ static void ebpf_set_fd_names()
 {
     ebpf_update_names(close_names);
 
-// Used to fix issue with RH 8.x family
-#if (MY_LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0))
-    if (close_names[0].optional) {
-        function_list[NETDATA_FD_CLOSE] = close_names[0].optional;
+    int i;
+    for (i = 0; close_names[i].program_name ; i++) {
+        if (close_names[i].optional) {
+            function_list[NETDATA_FD_CLOSE] = close_names[i].optional;
+            break;
+        }
     }
-#endif
 
-#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5, 5, 19))
-    function_list[NETDATA_FD_OPEN] = "do_sys_open";
-#endif
+    ebpf_update_names(open_names);
+    for (i = 0; open_names[i].program_name ; i++) {
+        if (open_names[i].optional) {
+          function_list[NETDATA_FD_OPEN] = open_names[i].optional;
+            break;
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -338,6 +357,10 @@ int main(int argc, char **argv)
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     ebpf_set_fd_names();
+    if (!function_list[NETDATA_FD_CLOSE] || !function_list[NETDATA_FD_OPEN]) {
+        fprintf(stderr, "Cannot find all necessary functions\n");
+        return 2;
+    }
 
     struct btf *bf = NULL;
     if (!selector) {
