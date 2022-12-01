@@ -24,6 +24,7 @@ enum NETDATA_EBPF_CORE_IDX {
 typedef struct ebpf_specify_name {
     char *program_name;
     char *function_to_attach;
+    size_t length;
     char *optional;
     bool retprobe;
 } ebpf_specify_name_t;
@@ -49,22 +50,31 @@ static inline void ebpf_update_names(ebpf_specify_name_t *names)
         return;
 
     char *data;
-    char *cmp = names->function_to_attach;
-    size_t len = strlen(cmp);
     while ( (data = fgets(line, 255, fp))) {
         data += 19;
-        ebpf_specify_name_t *move = names;
-        if (!strncmp(cmp, data, len)) {
-            char *end = strchr(data, ' ');
-            if (!end)
-                end = strchr(data, '\n');
+        ebpf_specify_name_t *name;
+        int i;
+        int all_filled = 1;
+        for (i = 0, name = &names[i]; name->program_name; i++, name = &names[i]) {
+            if (name->optional)
+                continue;
 
-            if (end)
-                *end = '\0';
+            all_filled = 0;
+            if (!strncmp(name->function_to_attach, data, name->length)) {
+                char *end = strchr(data, ' ');
+                if (!end)
+                    end = strchr(data, '\n');
 
-            move->optional = strdup(data);
-            break;
+                if (end)
+                    *end = '\0';
+
+                name->optional = strdup(data);
+                break;
+            }
         }
+
+        if (all_filled)
+            break;
     }
 
     fclose(fp);
