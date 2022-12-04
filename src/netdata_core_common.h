@@ -21,6 +21,65 @@ enum NETDATA_EBPF_CORE_IDX {
 
 #define NETDATA_EBPF_KERNEL_5_19_0 332544
 
+typedef struct ebpf_specify_name {
+    char *program_name;
+    char *function_to_attach;
+    size_t length;
+    char *optional;
+    bool retprobe;
+} ebpf_specify_name_t;
+
+/**
+ * Update names
+ *
+ * Open /proc/kallsyms and update the name for specific function
+ *
+ * THIS FUNCTION IS ALSO PRESENT IN `kernel-collector` REPO, AS SOON IT IS TRANSFERRED FROM TEST TO
+ * COMMON FILE, IT NEEDS TO BE REMOVED FROM HERE.
+ *
+ * @param names    vector with names to modify target.
+ */
+static inline void ebpf_update_names(ebpf_specify_name_t *names)
+{
+    if (names->optional)
+        return;
+
+    char line[256];
+    FILE *fp = fopen("/proc/kallsyms", "r");
+    if (!fp)
+        return;
+
+    char *data;
+    while ( (data = fgets(line, 255, fp))) {
+        data += 19;
+        ebpf_specify_name_t *name;
+        int i;
+        int all_filled = 1;
+        for (i = 0, name = &names[i]; name->program_name; i++, name = &names[i]) {
+            if (name->optional)
+                continue;
+
+            all_filled = 0;
+            if (!strncmp(name->function_to_attach, data, name->length)) {
+                char *end = strchr(data, ' ');
+                if (!end)
+                    end = strchr(data, '\n');
+
+                if (end)
+                    *end = '\0';
+
+                name->optional = strdup(data);
+                break;
+            }
+        }
+
+        if (all_filled)
+            break;
+    }
+
+    fclose(fp);
+}
+
 /**
  * Fill Control table
  *
