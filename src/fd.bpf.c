@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline int netdata_are_apps_enabled()
+static __always_inline int netdata_are_apps_enabled()
 {
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u32 *apps = bpf_map_lookup_elem(&fd_ctrl ,&key);
@@ -49,21 +49,12 @@ static inline int netdata_are_apps_enabled()
     return 1;
 }
 
-static inline void netdata_fill_common_fd_data(struct netdata_fd_stat_t *data)
-{
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-
-    data->pid_tgid = pid_tgid;
-    data->pid = tgid;
-}
-
 /************************************************************************************
  *
  *                           KPROBE SECTION
  *
  ***********************************************************************************/
-static inline int netdata_apps_do_sys_openat2(long ret)
+static __always_inline int netdata_apps_do_sys_openat2(long ret)
 {
     struct netdata_fd_stat_t *fill;
     struct netdata_fd_stat_t data = { };
@@ -78,7 +69,6 @@ static inline int netdata_apps_do_sys_openat2(long ret)
         if (ret < 0) 
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
-        netdata_fill_common_fd_data(&data);
         data.open_call = 1;
         if (ret < 0)
             data.open_err = 1;
@@ -90,7 +80,7 @@ static inline int netdata_apps_do_sys_openat2(long ret)
     return 0;
 }
 
-static inline void netdata_sys_open_global(long ret)
+static __always_inline void netdata_sys_open_global(long ret)
 {
     if (ret < 0)
         libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_ERROR_DO_SYS_OPEN, 1);
@@ -98,7 +88,7 @@ static inline void netdata_sys_open_global(long ret)
     libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_CALLS_DO_SYS_OPEN, 1);
 }
 
-static inline int netdata_apps_close_fd(int ret)
+static __always_inline int netdata_apps_close_fd(int ret)
 {
     struct netdata_fd_stat_t data = { };
     struct netdata_fd_stat_t *fill;
@@ -113,7 +103,6 @@ static inline int netdata_apps_close_fd(int ret)
         if (ret < 0)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
-        netdata_fill_common_fd_data(&data);
         data.close_call = 1;
         if (ret < 0)
             data.close_err = 1;
@@ -124,7 +113,7 @@ static inline int netdata_apps_close_fd(int ret)
     return 0;
 }
 
-static inline void netdata_close_global(int ret)
+static __always_inline void netdata_close_global(int ret)
 {
     if (ret < 0)
         libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_ERROR_CLOSE_FD, 1);
@@ -132,7 +121,7 @@ static inline void netdata_close_global(int ret)
     libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_CALLS_CLOSE_FD, 1);
 }
 
-static inline int netdata_release_task_fd()
+static __always_inline int netdata_release_task_fd()
 {
     struct netdata_fd_stat_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;

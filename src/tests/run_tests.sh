@@ -3,6 +3,7 @@
 three_tests=( "cachestat" "dc" "fd" "mount" "process" "shm" "socket" "swap" "sync" "vfs" )
 one_test=( "disk" "hardirq" "oomkill" "softirq" )
 end_loop=
+ADDITIONAL_ARG=
 
 echo "Running all tests with three options"
 for i in "${three_tests[@]}" ; do
@@ -16,16 +17,24 @@ for i in "${three_tests[@]}" ; do
 
         for j in $(seq 0 $end_loop); do
 	    if [ -z "${pid}" ]; then
-                printf "================  Running %s without PID  ================" "${i}"
+                printf "================  Running %s without PID  ================\n" "${i}"
+                ADDITIONAL_ARG=""
 	    else
-                printf "================  Running %s with PID GROUP %s  ================" "${i}" "${j}"
+                printf "================  Running %s with PID GROUP %s  ================\n" "${i}" "${j}"
+                ADDITIONAL_ARG="--pid $j"
 	    fi
+
             echo "---> Probe: "
-            "./$i" --probe
+            probe_cmd="./$i --probe ${ADDITIONAL_ARG}"
+            eval "$probe_cmd"
+
             echo "---> Tracepoint: "
-            "./$i" --tracepoint
+            tracepoint_cmd="./$i --tracepoint ${ADDITIONAL_ARG}"
+            eval "$tracepoint_cmd"
+
             echo "---> Trampoline: "
-            "./$i" --trampoline
+            trampoline_cmd="./$i --trampoline ${ADDITIONAL_ARG}"
+            eval "$trampoline_cmd"
             echo "  "
         done
     }  >> success.log 2>> error.log

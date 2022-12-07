@@ -19,15 +19,27 @@
 
 #include "cachestat.skel.h"
 
-char *syscalls[] = { "add_to_page_cache_lru",
+// Alma Linux modified internal name, this structure was brought for it.
+static ebpf_specify_name_t cachestat_names[] = { {.program_name = "netdata_folio_mark_dirty_kprobe",
+                                                  .function_to_attach = "__folio_mark_dirty",
+                                                  .length = 18,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = "netdata_set_page_dirty_kprobe",
+                                                  .function_to_attach = "__set_page_dirty",
+                                                  .length = 16,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = "netdata_account_page_dirtied_kprobe",
+                                                  .function_to_attach = "account_page_dirtied",
+                                                  .length = 20,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = NULL}};
+
+char *cachestat_fcnt[] = { "add_to_page_cache_lru",
                      "mark_page_accessed",
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0))
-                     "__folio_mark_dirty",
-#elif (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0))
-                     "__set_page_dirty",
-#else
-                     "account_page_dirtied",
-#endif
+                     NULL, // Filled after to discover available functions
                      "mark_buffer_dirty",
                      "release_task"
 };
@@ -47,16 +59,16 @@ static inline void netdata_ebpf_disable_probe(struct cachestat_bpf *obj)
 
 static inline void netdata_ebpf_disable_specific_probe(struct cachestat_bpf *obj)
 {
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0))
-    bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_kprobe, false);
-#elif (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0))
-    bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_kprobe, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_kprobe, false);
-#endif
+    if (cachestat_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_kprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_kprobe, false);
+    } else if (cachestat_names[1].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_kprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_kprobe, false);
+    } else {
+        bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_kprobe, false);
+        bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_kprobe, false);
+    }
 }
 
 static inline void netdata_ebpf_disable_trampoline(struct cachestat_bpf *obj)
@@ -72,42 +84,42 @@ static inline void netdata_ebpf_disable_trampoline(struct cachestat_bpf *obj)
 
 static inline void netdata_ebpf_disable_specific_trampoline(struct cachestat_bpf *obj)
 {
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0))
-    bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_fentry, false);
-#elif (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0))
-    bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_fentry, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_fentry, false);
-#endif
+    if (cachestat_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_fentry, false);
+        bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_fentry, false);
+    } else if (cachestat_names[1].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_fentry, false);
+        bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_fentry, false);
+    } else {
+        bpf_program__set_autoload(obj->progs.netdata_folio_mark_dirty_fentry, false);
+        bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_fentry, false);
+    }
 }
 
 static inline void netdata_set_trampoline_target(struct cachestat_bpf *obj)
 {
     bpf_program__set_attach_target(obj->progs.netdata_add_to_page_cache_lru_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU]);
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU]);
 
     bpf_program__set_attach_target(obj->progs.netdata_mark_page_accessed_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED]);
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED]);
 
-#if (MY_LINUX_VERSION_CODE > KERNEL_VERSION(5,16,0))
-    bpf_program__set_attach_target(obj->progs.netdata_folio_mark_dirty_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
-#elif (MY_LINUX_VERSION_CODE > KERNEL_VERSION(5,15,0))
-    bpf_program__set_attach_target(obj->progs.netdata_set_page_dirty_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
-#else
-    bpf_program__set_attach_target(obj->progs.netdata_account_page_dirtied_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
-#endif
+    if (cachestat_names[0].optional) {
+        bpf_program__set_attach_target(obj->progs.netdata_folio_mark_dirty_fentry, 0,
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+    } else if (cachestat_names[1].optional) {
+        bpf_program__set_attach_target(obj->progs.netdata_set_page_dirty_fentry, 0,
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+    } else {
+        bpf_program__set_attach_target(obj->progs.netdata_account_page_dirtied_fentry, 0,
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+    }
 
     bpf_program__set_attach_target(obj->progs.netdata_mark_buffer_dirty_fentry, 0,
-                                   syscalls[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
+                                   cachestat_fcnt[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
 
     bpf_program__set_attach_target(obj->progs.netdata_release_task_fentry, 0,
-                                   syscalls[NETDATA_CACHESTAT_RELEASE_TASK]);
+                                   cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
 }
 
 static inline int ebpf_load_and_attach(struct cachestat_bpf *obj, int selector)
@@ -227,6 +239,18 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
     return ret;
 }
 
+static inline void fill_cachestat_fcnt()
+{
+    ebpf_update_names(cachestat_names);
+    int i;
+    for (i = 0; cachestat_names[i].program_name ; i++) {
+        if (cachestat_names[i].optional) {
+            cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED] = cachestat_names[i].optional;
+            break;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
@@ -284,11 +308,17 @@ int main(int argc, char **argv)
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
+    fill_cachestat_fcnt();
+    if (!cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]) {
+        fprintf(stderr, "Cannot find all necessary functions\n");
+        return 0;
+    }
+
     struct btf *bf = NULL;
     if (!selector) {
         bf = netdata_parse_btf_file((const char *)NETDATA_BTF_FILE);
         if (bf)
-            selector = ebpf_find_functions(bf, selector, syscalls, NETDATA_CACHESTAT_END);
+            selector = ebpf_find_functions(bf, selector, cachestat_fcnt, NETDATA_CACHESTAT_END);
     }
 
     return ebpf_cachestat_tests(selector, map_level);
