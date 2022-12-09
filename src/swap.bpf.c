@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline int common_readpage()
+static __always_inline int common_readpage()
 {
     netdata_swap_access_t data = {};
 
@@ -61,7 +61,7 @@ static inline int common_readpage()
     return 0;
 }
 
-static inline int common_writepage()
+static __always_inline int common_writepage()
 {
     netdata_swap_access_t data = {};
 
@@ -84,7 +84,7 @@ static inline int common_writepage()
     return 0;
 }
 
-static inline int netdata_release_task_swap()
+static __always_inline int netdata_release_task_swap()
 {
     netdata_swap_access_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
