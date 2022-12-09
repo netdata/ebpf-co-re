@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline int netdata_common_lookup_fast()
+static __always_inline int netdata_common_lookup_fast()
 {
     netdata_dc_stat_t *fill, data = {};
     libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_REFERENCE, 1);
@@ -60,7 +60,7 @@ static inline int netdata_common_lookup_fast()
     return 0;
 }
 
-static inline int netdata_common_d_lookup(long ret)
+static __always_inline int netdata_common_d_lookup(long ret)
 {
     netdata_dc_stat_t *fill, data = {};
     libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_SLOW, 1);
