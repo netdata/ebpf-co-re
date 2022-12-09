@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline void netdata_update_stored_data(netdata_shm_t *data, __u32 selector)
+static __always_inline void netdata_update_stored_data(netdata_shm_t *data, __u32 selector)
 {
     // we are using if/else if instead switch to avoid warnings
     if (selector == NETDATA_KEY_SHMGET_CALL)
@@ -51,7 +51,7 @@ static inline void netdata_update_stored_data(netdata_shm_t *data, __u32 selecto
         libnetdata_update_u64(&data->ctl, 1);
 }
 
-static inline void netdata_set_structure_value(netdata_shm_t *data, __u32 selector)
+static __always_inline void netdata_set_structure_value(netdata_shm_t *data, __u32 selector)
 {
     // we are using if/else if instead switch to avoid warnings
     if (selector == NETDATA_KEY_SHMGET_CALL)
@@ -64,7 +64,7 @@ static inline void netdata_set_structure_value(netdata_shm_t *data, __u32 select
         data->ctl = 1;
 }
 
-static inline int netdata_update_apps(__u32 idx)
+static __always_inline int netdata_update_apps(__u32 idx)
 {
     netdata_shm_t data = {};
 
@@ -80,7 +80,7 @@ static inline int netdata_update_apps(__u32 idx)
     return 0;
 }
 
-static inline int netdata_global_apps_shm(__u32 idx)
+static __always_inline int netdata_global_apps_shm(__u32 idx)
 {
     libnetdata_update_global(&tbl_shm, idx, 1);
 
@@ -96,7 +96,7 @@ static inline int netdata_global_apps_shm(__u32 idx)
     return 1;
 }
 
-static inline int netdata_ebpf_common_shmget()
+static __always_inline int netdata_ebpf_common_shmget()
 {
     int store_apps = netdata_global_apps_shm(NETDATA_KEY_SHMGET_CALL);
     if (!store_apps)
@@ -105,7 +105,7 @@ static inline int netdata_ebpf_common_shmget()
     return netdata_update_apps(NETDATA_KEY_SHMGET_CALL);
 }
 
-static inline int netdata_ebpf_common_shmat()
+static __always_inline int netdata_ebpf_common_shmat()
 {
     int store_apps = netdata_global_apps_shm(NETDATA_KEY_SHMAT_CALL);
     if (!store_apps)
@@ -114,7 +114,7 @@ static inline int netdata_ebpf_common_shmat()
     return netdata_update_apps(NETDATA_KEY_SHMAT_CALL);
 }
 
-static inline int netdata_ebpf_common_shmdt()
+static __always_inline int netdata_ebpf_common_shmdt()
 {
     int store_apps = netdata_global_apps_shm(NETDATA_KEY_SHMDT_CALL);
     if (!store_apps)
@@ -123,7 +123,7 @@ static inline int netdata_ebpf_common_shmdt()
     return netdata_update_apps(NETDATA_KEY_SHMDT_CALL);
 }
 
-static inline int netdata_ebpf_common_shmctl()
+static __always_inline int netdata_ebpf_common_shmctl()
 {
     int store_apps = netdata_global_apps_shm(NETDATA_KEY_SHMCTL_CALL);
     if (!store_apps)
@@ -132,7 +132,7 @@ static inline int netdata_ebpf_common_shmctl()
     return netdata_update_apps(NETDATA_KEY_SHMCTL_CALL);
 }
 
-static inline int netdata_release_task_shm()
+static __always_inline int netdata_release_task_shm()
 {
     netdata_shm_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
