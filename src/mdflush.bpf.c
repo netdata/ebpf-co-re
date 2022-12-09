@@ -42,7 +42,7 @@ struct {
  *
  ***********************************************************************************/
 
-static int netdata_md_common(struct mddev *mddev)
+static __always_inline int netdata_md_common(struct mddev *mddev)
 {
     mdflush_key_t key = 0;
     mdflush_val_t *valp, val;
