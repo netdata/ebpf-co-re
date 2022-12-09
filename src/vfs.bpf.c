@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat_t *data)
+static __always_inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat_t *data)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
@@ -362,7 +362,7 @@ static __always_inline int netdata_common_vfs_create(int ret)
     return 0;
 }
 
-static inline int netdata_release_task_vfs()
+static __always_inline int netdata_release_task_vfs()
 {
     struct netdata_vfs_stat_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
