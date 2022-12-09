@@ -33,7 +33,7 @@ struct {
  *     
  ***********************************************************************************/
 
-static int netdata_fs_entry()
+static __always_inline int netdata_fs_entry()
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tgid >> 32);
@@ -44,7 +44,7 @@ static int netdata_fs_entry()
     return 0;
 }
 
-static int netdata_fs_store_bin(__u32 selection)
+static __always_inline int netdata_fs_store_bin(__u32 selection)
 {
     __u64 *fill, data;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
