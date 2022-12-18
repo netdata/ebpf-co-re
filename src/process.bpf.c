@@ -38,7 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static inline void netdata_fill_common_process_data(struct netdata_pid_stat_t *data)
+static __always_inline void netdata_fill_common_process_data(struct netdata_pid_stat_t *data)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
@@ -47,7 +47,7 @@ static inline void netdata_fill_common_process_data(struct netdata_pid_stat_t *d
     data->pid = tgid;
 }
 
-static inline int netdata_common_release_task()
+static __always_inline int netdata_common_release_task()
 {
     struct netdata_pid_stat_t *fill;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
@@ -67,7 +67,7 @@ static inline int netdata_common_release_task()
     return 0;
 }
 
-static inline int netdata_common_fork_clone(int ret)
+static __always_inline int netdata_common_fork_clone(int ret)
 {
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     struct netdata_pid_stat_t data = { };
