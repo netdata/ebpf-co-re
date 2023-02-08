@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS build
+FROM ubuntu:23.04 AS build
 
 ARG ARCH=x86
 ENV ARCH=$ARCH
@@ -11,13 +11,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3018,DL3015,DL3008,DL3009
 RUN apt-get update && \
     apt-get install -y build-essential autoconf automake coreutils pkg-config \
-                       bc libelf-dev libssl-dev clang-tools-12 libclang-12-dev \
-                       llvm-12 rsync bison flex tar xz-utils wget libbfd-dev \
+                       bc libelf-dev libssl-dev clang-tools-13 libclang-13-dev \
+                       llvm-13 rsync bison flex tar xz-utils wget libbfd-dev \
                        libcap-dev
 
 # hadolint ignore=DL3059
-RUN ln -s /usr/bin/clang-12 /usr/bin/clang && \
-    ln -s /usr/bin/llvm-strip-12 /usr/bin/llvm-strip
+RUN ln -s /usr/bin/clang-13 /usr/bin/clang && \
+    ln -s /usr/bin/llvm-strip-13 /usr/bin/llvm-strip
 
 # hadolint ignore=DL3003,SC3009,DL4006,SC2046
 RUN mkdir -p /usr/src && \
