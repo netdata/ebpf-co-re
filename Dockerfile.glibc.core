@@ -16,7 +16,7 @@ RUN apt-get update && \
                        libcap-dev
 
 # hadolint ignore=DL3059
-RUN ln -s /usr/bin/clang-14 /usr/bin/clang && \
+RUN ln -s /usr/bin/clang-12 /usr/bin/clang && \
     ln -s /usr/bin/llvm-strip-12 /usr/bin/llvm-strip
 
 # hadolint ignore=DL3003,SC3009,DL4006,SC2046
