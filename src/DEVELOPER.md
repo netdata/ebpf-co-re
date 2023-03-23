@@ -5,7 +5,8 @@ This MD file was added to help developers starting with eBPF development.
 In this repo we are using the same [pattern](https://elixir.bootlin.com/linux/v6.3-rc2/source/samples/bpf) that was used with
 latest [BTF](https://docs.kernel.org/bpf/btf.html) code. All source files ending with `.bpf.c` are eBPF codes converted to
 `.skel.h` files (These are headers used to load eBPF code). We have independent source files `*.c` to demonstrate
-the usage of `skel.h` files, these files are the basis for thread written in [eBPF.plugin](https://github.com/netdata/netdata/tree/master/collectors/ebpf.plugin).
+the usage of `skel.h` files, these files are used with [eBPF.plugin](https://github.com/netdata/netdata/tree/master/collectors/ebpf.plugin)
+to load specific eBPF programs.
 
 ## Libbpf
 
