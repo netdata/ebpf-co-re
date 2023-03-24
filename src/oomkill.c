@@ -40,9 +40,7 @@ static void ebpf_update_table(int global)
 
 static int oomkill_read_array(int fd, int ebpf_nprocs)
 {
-    unsigned char *stored = calloc((size_t)ebpf_nprocs, sizeof(unsigned char));
-    if (!stored)
-        return 2;
+    unsigned char stored[ebpf_nprocs];
 
     unsigned char counter = 0;
     int idx = 0;
@@ -52,8 +50,6 @@ static int oomkill_read_array(int fd, int ebpf_nprocs)
             counter += stored[j];
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
