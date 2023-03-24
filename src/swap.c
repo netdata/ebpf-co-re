@@ -116,7 +116,7 @@ static void ebpf_fill_tables(int global, int apps)
 
 static int swap_read_apps_array(int fd, int ebpf_nprocs)
 {
-    netdata_swap_access_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_swap_access_t));
+    netdata_swap_access_t stored[ebpf_nprocs];
     if (!stored)
         return 2;
 
