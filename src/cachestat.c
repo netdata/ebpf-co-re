@@ -172,7 +172,7 @@ static pid_t ebpf_update_tables(int global, int apps)
 
 static int cachestat_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 {
-    netdata_cachestat_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_cachestat_t));
+    netdata_cachestat_t stored[ebpf_nprocs];
     if (!stored)
         return 2;
 
@@ -188,8 +188,6 @@ static int cachestat_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 
         key = next_key;
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
