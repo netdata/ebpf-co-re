@@ -46,9 +46,7 @@ static void ebpf_update_table(int global)
 
 static int disk_read_array(int fd, int ebpf_nprocs)
 {
-    uint64_t *stored = calloc((size_t)ebpf_nprocs, sizeof(uint64_t));
-    if (!stored)
-        return 2;
+    uint64_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     block_key_t idx =  { .bin = 0, .dev = 0};
@@ -58,8 +56,6 @@ static int disk_read_array(int fd, int ebpf_nprocs)
             counter += stored[j];
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
