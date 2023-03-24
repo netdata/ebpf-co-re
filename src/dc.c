@@ -105,9 +105,7 @@ static inline int ebpf_load_and_attach(struct dc_bpf *obj, int selector)
 
 static int dc_read_apps_array(int fd, int ebpf_nprocs)
 {
-    netdata_dc_stat_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_dc_stat_t));
-    if (!stored)
-        return 2;
+    netdata_dc_stat_t stored[ebpf_nprocs];
 
     uint32_t key, next_key;
     uint64_t counter = 0;
@@ -121,8 +119,6 @@ static int dc_read_apps_array(int fd, int ebpf_nprocs)
 
         key = next_key;
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);

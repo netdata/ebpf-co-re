@@ -173,8 +173,6 @@ static pid_t ebpf_update_tables(int global, int apps)
 static int cachestat_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 {
     netdata_cachestat_t stored[ebpf_nprocs];
-    if (!stored)
-        return 2;
 
     uint64_t counter = 0;
 
