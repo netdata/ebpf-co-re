@@ -51,7 +51,7 @@ static void ebpf_update_table(int global)
 
 static int softirq_read_array(int fd, int ebpf_nprocs)
 {
-    softirq_val_t *stored = calloc((size_t)ebpf_nprocs, sizeof(softirq_val_t));
+    softirq_val_t stored[ebpf_nprocs];
     if (!stored)
         return 2;
 
@@ -63,8 +63,6 @@ static int softirq_read_array(int fd, int ebpf_nprocs)
             counter += stored[j].ts + stored[j].latency;
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
