@@ -148,9 +148,7 @@ static int call_syscalls()
 static int mount_read_array(int fd)
 {
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    uint64_t *stored = calloc((size_t)ebpf_nprocs, sizeof(uint64_t));
-    if (!stored)
-        return 2;
+    uint64_t stored[ebpf_nprocs];
 
     uint32_t idx;
     uint64_t counter = 0;
@@ -164,8 +162,6 @@ static int mount_read_array(int fd)
 
         memset(stored, 0, sizeof(uint64_t) * ebpf_nprocs);
     }
-
-    free(stored);
 
     if (counter >= 2) {
         fprintf(stdout, "Data stored with success\n");
