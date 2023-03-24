@@ -121,9 +121,7 @@ static pid_t ebpf_update_tables(int global, int apps)
 
 static int process_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 {
-    struct netdata_pid_stat_t *stored = calloc((size_t)ebpf_nprocs, sizeof(struct netdata_pid_stat_t));
-    if (!stored)
-        return 2;
+    struct netdata_pid_stat_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     int key, next_key;
@@ -136,8 +134,6 @@ static int process_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 
         key = next_key;
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
