@@ -117,8 +117,6 @@ static void ebpf_fill_tables(int global, int apps)
 static int swap_read_apps_array(int fd, int ebpf_nprocs)
 {
     netdata_swap_access_t stored[ebpf_nprocs];
-    if (!stored)
-        return 2;
 
     int key, next_key;
     key = next_key = 0;
@@ -131,8 +129,6 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
 
         key = next_key;
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);

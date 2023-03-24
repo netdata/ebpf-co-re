@@ -52,8 +52,6 @@ static void ebpf_update_table(int global)
 static int softirq_read_array(int fd, int ebpf_nprocs)
 {
     softirq_val_t stored[ebpf_nprocs];
-    if (!stored)
-        return 2;
 
     uint64_t counter = 0;
     int idx = 0;
