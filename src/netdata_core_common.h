@@ -21,6 +21,8 @@ enum NETDATA_EBPF_CORE_IDX {
 
 #define NETDATA_EBPF_KERNEL_5_19_0 332544
 
+#define NETDATA_CORE_PROCESS_NUMBER 4096
+
 typedef struct ebpf_specify_name {
     char *program_name;
     char *function_to_attach;

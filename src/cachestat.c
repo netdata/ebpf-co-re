@@ -200,6 +200,8 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
 {
     struct cachestat_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = cachestat_bpf__open();
     if (!obj) {

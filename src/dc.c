@@ -146,6 +146,8 @@ static int ebpf_dc_tests(int selector, enum netdata_apps_level map_level)
 {
     struct dc_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = dc_bpf__open();
     if (!obj) {

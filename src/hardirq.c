@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 
 #include "hardirq.skel.h"
 
@@ -78,6 +79,8 @@ static int ebpf_hardirq_tests()
 {
     struct hardirq_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = hardirq_bpf__open();
     if (!obj) {

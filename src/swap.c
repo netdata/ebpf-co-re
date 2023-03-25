@@ -141,6 +141,8 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
 int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 {
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     struct swap_bpf *obj = NULL;
 

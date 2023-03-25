@@ -321,6 +321,8 @@ static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
 {
     struct vfs_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = vfs_bpf__open();
     if (!obj) {
