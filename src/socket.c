@@ -295,9 +295,7 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
 
 static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_nprocs)
 {
-    netdata_bandwidth_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_bandwidth_t));
-    if (!stored)
-        return 2;
+    netdata_bandwidth_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     int key, next_key;
@@ -312,8 +310,6 @@ static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_np
         key = next_key;
     }
 
-    free(stored);
-
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
@@ -326,9 +322,7 @@ static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_np
 
 static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj, int ebpf_nprocs, int ip_version)
 {
-    netdata_socket_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_socket_t));
-    if (!stored)
-        return 2;
+    netdata_socket_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     int ip_fd = bpf_map__fd((ip_version == 4) ? obj->maps.tbl_conn_ipv4 : obj->maps.tbl_conn_ipv6);
@@ -339,8 +333,6 @@ static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj
                         stored[j].first + stored[j].ct + stored[j].retransmit);
         }
     }
-
-    free(stored);
 
     if (counter) {
         return 0;
@@ -370,6 +362,8 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
 {
     struct socket_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = socket_bpf__open();
     if (!obj) {

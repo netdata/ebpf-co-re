@@ -116,9 +116,7 @@ static void ebpf_fill_tables(int global, int apps)
 
 static int swap_read_apps_array(int fd, int ebpf_nprocs)
 {
-    netdata_swap_access_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_swap_access_t));
-    if (!stored)
-        return 2;
+    netdata_swap_access_t stored[ebpf_nprocs];
 
     int key, next_key;
     key = next_key = 0;
@@ -132,8 +130,6 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
         key = next_key;
     }
 
-    free(stored);
-
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
@@ -145,6 +141,8 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
 int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 {
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     struct swap_bpf *obj = NULL;
 

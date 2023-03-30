@@ -202,9 +202,7 @@ void shm_fill_tables(struct shm_bpf *obj)
 
 static int shm_read_apps_array(int fd, int ebpf_nprocs)
 {
-    netdata_shm_t *stored = calloc((size_t)ebpf_nprocs, sizeof(netdata_shm_t));
-    if (!stored)
-        return 2;
+    netdata_shm_t stored[ebpf_nprocs];
 
     int key, next_key;
     key = next_key = 0;
@@ -218,8 +216,6 @@ static int shm_read_apps_array(int fd, int ebpf_nprocs)
         key = next_key;
     }
 
-    free(stored);
-
     if (counter) {
         fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
         return 0;
@@ -232,6 +228,8 @@ int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_lev
 {
     struct shm_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     if (bf)
         selector = ebpf_find_functions(bf, selector, syscalls, NETDATA_SHM_END);

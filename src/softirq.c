@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 
 #include "softirq.skel.h"
 
@@ -51,9 +52,7 @@ static void ebpf_update_table(int global)
 
 static int softirq_read_array(int fd, int ebpf_nprocs)
 {
-    softirq_val_t *stored = calloc((size_t)ebpf_nprocs, sizeof(softirq_val_t));
-    if (!stored)
-        return 2;
+    softirq_val_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     int idx = 0;
@@ -63,8 +62,6 @@ static int softirq_read_array(int fd, int ebpf_nprocs)
             counter += stored[j].ts + stored[j].latency;
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
@@ -78,6 +75,8 @@ static int ebpf_softirq_tests()
 {
     struct softirq_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = softirq_bpf__open();
     if (!obj) {

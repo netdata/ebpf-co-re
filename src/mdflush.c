@@ -87,6 +87,8 @@ static int ebpf_mdflush_tests(int selector)
 {
     struct mdflush_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = mdflush_bpf__open();
     if (!obj) {

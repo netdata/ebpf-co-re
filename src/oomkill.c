@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 
 #include "oomkill.skel.h"
 
@@ -40,9 +41,7 @@ static void ebpf_update_table(int global)
 
 static int oomkill_read_array(int fd, int ebpf_nprocs)
 {
-    unsigned char *stored = calloc((size_t)ebpf_nprocs, sizeof(unsigned char));
-    if (!stored)
-        return 2;
+    unsigned char stored[ebpf_nprocs];
 
     unsigned char counter = 0;
     int idx = 0;
@@ -52,8 +51,6 @@ static int oomkill_read_array(int fd, int ebpf_nprocs)
             counter += stored[j];
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
@@ -67,6 +64,8 @@ static int ebpf_oomkill_tests()
 {
     struct oomkill_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = oomkill_bpf__open();
     if (!obj) {

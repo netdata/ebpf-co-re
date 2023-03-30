@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 
 #include "hardirq.skel.h"
 
@@ -55,9 +56,7 @@ static void ebpf_update_table(int global)
 
 static int hardirq_read_array(int fd, int ebpf_nprocs)
 {
-    hardirq_val_t *stored = calloc((size_t)ebpf_nprocs, sizeof(hardirq_val_t));
-    if (!stored)
-        return 2;
+    hardirq_val_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     int idx = 0;
@@ -67,8 +66,6 @@ static int hardirq_read_array(int fd, int ebpf_nprocs)
             counter += stored[j].ts + stored[j].latency;
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
@@ -82,6 +79,8 @@ static int ebpf_hardirq_tests()
 {
     struct hardirq_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = hardirq_bpf__open();
     if (!obj) {

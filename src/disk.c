@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "netdata_defs.h"
+#include "netdata_core_common.h"
 #include "netdata_tests.h"
 
 #include "disk.skel.h"
@@ -46,9 +47,7 @@ static void ebpf_update_table(int global)
 
 static int disk_read_array(int fd, int ebpf_nprocs)
 {
-    uint64_t *stored = calloc((size_t)ebpf_nprocs, sizeof(uint64_t));
-    if (!stored)
-        return 2;
+    uint64_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
     block_key_t idx =  { .bin = 0, .dev = 0};
@@ -58,8 +57,6 @@ static int disk_read_array(int fd, int ebpf_nprocs)
             counter += stored[j];
         }
     }
-
-    free(stored);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
@@ -73,6 +70,8 @@ static int ebpf_disk_tests()
 {
     struct disk_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = disk_bpf__open();
     if (!obj) {
