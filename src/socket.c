@@ -315,7 +315,7 @@ static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_np
         return 0;
     }
 
-    fprintf(stdout, "Cannot read apps data.\n");
+    fprintf(stdout, "Empty apps table\n");
 
     return 2;
 }

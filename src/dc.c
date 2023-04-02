@@ -170,7 +170,7 @@ static int ebpf_dc_tests(int selector, enum netdata_apps_level map_level)
         if (!ret) {
             ret = dc_read_apps_array(fd2, ebpf_nprocs);
             if (ret)
-                fprintf(stderr, "Cannot read apps table\n");
+                fprintf(stdout, "Empty apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {

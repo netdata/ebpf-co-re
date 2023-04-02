@@ -263,7 +263,7 @@ static int ebpf_fd_tests(int selector, enum netdata_apps_level map_level)
         if (!ret) {
             ret = fd_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
             if (ret)
-                fprintf(stderr, "Cannot read apps table\n");
+                fprintf(stdout, "Empty apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {

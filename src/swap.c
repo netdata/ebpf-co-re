@@ -166,7 +166,7 @@ int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
         if (!ret) {
             ret =  swap_read_apps_array(fd2, ebpf_nprocs);
             if (ret)
-                fprintf(stderr, "Cannot read apps table\n");
+                fprintf(stdout, "Empty apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {
