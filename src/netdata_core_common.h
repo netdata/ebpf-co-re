@@ -43,7 +43,7 @@ typedef struct ebpf_specify_name {
  */
 static inline void ebpf_update_names(ebpf_specify_name_t *names)
 {
-    if (names->optional)
+    if (!names)
         return;
 
     char line[256];
@@ -51,31 +51,37 @@ static inline void ebpf_update_names(ebpf_specify_name_t *names)
     if (!fp)
         return;
 
+    int total;
+    for (total = 0; names[total].program_name; total++);
+
+    if (!total)
+         return;
+
     char *data;
+    int all_filled = 0;
     while ( (data = fgets(line, 255, fp))) {
         data += 19;
         ebpf_specify_name_t *name;
         int i;
-        int all_filled = 1;
         for (i = 0, name = &names[i]; name->program_name; i++, name = &names[i]) {
             if (name->optional)
                 continue;
 
-            all_filled = 0;
-            if (!strncmp(name->function_to_attach, data, name->length)) {
-                char *end = strchr(data, ' ');
-                if (!end)
-                    end = strchr(data, '\n');
+            char *end = strchr(data, ' ');
+            if (!end)
+                end = strchr(data, '\n');
 
-                if (end)
-                    *end = '\0';
+            if (end)
+                *end = '\0';
 
+            if (!strcmp(name->function_to_attach, data)) {
+                all_filled++;
                 name->optional = strdup(data);
                 break;
             }
         }
 
-        if (all_filled)
+        if (all_filled == total)
             break;
     }
 
