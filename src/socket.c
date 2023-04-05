@@ -479,6 +479,4 @@ int main(int argc, char **argv)
 
     return 0;
 }
-    return ebpf_socket_tests(selector, map_level);
-}
 
