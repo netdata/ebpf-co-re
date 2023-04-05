@@ -325,7 +325,7 @@ int main(int argc, char **argv)
         if (ebpf_cachestat_tests(selector, map_level) && !stop_software) {
             selector = 1;
         } else
-        stop_software = 1;
+            stop_software = 1;
     }
 }
 
