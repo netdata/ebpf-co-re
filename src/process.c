@@ -240,8 +240,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    return ebpf_process_tests(selector, map_level);
+    int stop_software = 0;
+    while (!stop_software) {
+        if (ebpf_process_tests(selector, map_level) && !stop_software) {
+            selector = 1;
+        } else
+            stop_software = 1;
+    }
+    return 0;
 }
 
