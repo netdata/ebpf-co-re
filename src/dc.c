@@ -265,6 +265,6 @@ int main(int argc, char **argv)
 
     free(lookup_fast);
 
-    return ret;
+    return 0;
 }
 

@@ -192,6 +192,6 @@ int main(int argc, char **argv)
 
     free(md_flush_request);
 
-    return ret;
+    return 0;
 }
 

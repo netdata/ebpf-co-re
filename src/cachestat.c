@@ -327,5 +327,6 @@ int main(int argc, char **argv)
         } else
             stop_software = 1;
     }
+    return 0;
 }
 
