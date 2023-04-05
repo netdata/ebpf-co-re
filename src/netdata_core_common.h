@@ -166,7 +166,7 @@ static inline int netdata_libbpf_vfprintf(enum libbpf_print_level level, const c
 
     static FILE *libbpf_err = NULL;
     if (!libbpf_err)  {
-        libbpf_err = fopen("libbpf.log", "w");
+        libbpf_err = fopen("libbpf.log", "a");
         if (!libbpf_err) {
             fprintf(stderr, "Cannot open libbpf.log");
             exit(1);
