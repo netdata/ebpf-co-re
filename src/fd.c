@@ -371,11 +371,12 @@ int main(int argc, char **argv)
     }
 
     int stop_software = 0;
-    while (!stop_software) {
+    while (stop_software < 2) {
         if (ebpf_fd_tests(selector, map_level) && !stop_software) {
             selector = 1;
+            stop_software++;
         } else
-            stop_software = 1;
+            stop_software = 2;
     }
 
     return 0;
