@@ -145,5 +145,36 @@ static inline void ebpf_core_print_help(char *name, char *info, int has_trampoli
                         "\t\t0 - Real parents\n\t\t1 - Parents\n\t\t2 - All pids\n");
 }
 
+/**
+ * Liibbpf vfprintf
+ *
+ * We use this function to filter separate software error from libbpf errors.
+ *
+ * @param level message level.
+ * @param format is the second argument used with vfprintf;
+ * @param args is tthe list of args used with format.
+ *
+ * @return it returns number of bytes written.
+ */
+static inline int netdata_libbpf_vfprintf(enum libbpf_print_level level, const char *format, va_list args)
+{
+    // FOR DEVELOPERS: To avoid generation of a lot of messages we are not printing all debug messages.
+    // When some software is developed, we strongly suggest to comment next two lines to take a look 
+    // in all messages.
+    if (level == LIBBPF_DEBUG)
+        return 0;
+
+    static FILE *libbpf_err = NULL;
+    if (!libbpf_err)  {
+        libbpf_err = fopen("libbpf.log", "w");
+        if (!libbpf_err) {
+            fprintf(stderr, "Cannot open libbpf.log");
+            exit(1);
+        }
+    }
+
+    return vfprintf(libbpf_err, format, args);
+}
+
 #endif /* _NETDATA_CORE_COMMON_H_ */
 
