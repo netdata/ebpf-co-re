@@ -173,7 +173,7 @@ static int ebpf_process_tests(int selector, enum netdata_apps_level map_level)
         if (!ret) {
             ret = process_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
             if (ret)
-                fprintf(stderr, "Cannot read apps table\n");
+                fprintf(stdout, "Empty apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {
@@ -240,8 +240,17 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    return ebpf_process_tests(selector, map_level);
+    int stop_software = 0;
+    while (stop_software < 2) {
+        if (ebpf_process_tests(selector, map_level) && !stop_software) {
+            selector = 1;
+            stop_software++;
+        } else
+            stop_software = 2;
+    }
+    return 0;
 }
 

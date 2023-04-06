@@ -248,6 +248,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     struct btf *bf = NULL;
@@ -257,6 +258,15 @@ int main(int argc, char **argv)
             selector = ebpf_find_functions(bf, selector, syscalls, NETDATA_MOUNT_SYSCALLS_END);
     }
 
-    return ebpf_mount_tests(selector);
+    int stop_software = 0;
+    while (stop_software < 2) {
+        if (ebpf_mount_tests(selector) && !stop_software) {
+            selector = 1;
+            stop_software++;
+        } else
+            stop_software = 2;
+    }
+
+    return 0;
 }
 

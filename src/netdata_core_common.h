@@ -43,7 +43,7 @@ typedef struct ebpf_specify_name {
  */
 static inline void ebpf_update_names(ebpf_specify_name_t *names)
 {
-    if (names->optional)
+    if (!names)
         return;
 
     char line[256];
@@ -51,31 +51,37 @@ static inline void ebpf_update_names(ebpf_specify_name_t *names)
     if (!fp)
         return;
 
+    int total;
+    for (total = 0; names[total].program_name; total++);
+
+    if (!total)
+         return;
+
     char *data;
+    int all_filled = 0;
     while ( (data = fgets(line, 255, fp))) {
         data += 19;
         ebpf_specify_name_t *name;
         int i;
-        int all_filled = 1;
         for (i = 0, name = &names[i]; name->program_name; i++, name = &names[i]) {
             if (name->optional)
                 continue;
 
-            all_filled = 0;
-            if (!strncmp(name->function_to_attach, data, name->length)) {
-                char *end = strchr(data, ' ');
-                if (!end)
-                    end = strchr(data, '\n');
+            char *end = strchr(data, ' ');
+            if (!end)
+                end = strchr(data, '\n');
 
-                if (end)
-                    *end = '\0';
+            if (end)
+                *end = '\0';
 
+            if (!strcmp(name->function_to_attach, data)) {
+                all_filled++;
                 name->optional = strdup(data);
                 break;
             }
         }
 
-        if (all_filled)
+        if (all_filled == total)
             break;
     }
 
@@ -137,6 +143,37 @@ static inline void ebpf_core_print_help(char *name, char *info, int has_trampoli
     if (has_integration)
         fprintf(stdout, "--pid        : Store PID according argument given. Values can be:\n"
                         "\t\t0 - Real parents\n\t\t1 - Parents\n\t\t2 - All pids\n");
+}
+
+/**
+ * Liibbpf vfprintf
+ *
+ * We use this function to filter separate software error from libbpf errors.
+ *
+ * @param level message level.
+ * @param format is the second argument used with vfprintf;
+ * @param args is tthe list of args used with format.
+ *
+ * @return it returns number of bytes written.
+ */
+static inline int netdata_libbpf_vfprintf(enum libbpf_print_level level, const char *format, va_list args)
+{
+    // FOR DEVELOPERS: To avoid generation of a lot of messages we are not printing all debug messages.
+    // When some software is developed, we strongly suggest to comment next two lines to take a look 
+    // in all messages.
+    if (level == LIBBPF_DEBUG)
+        return 0;
+
+    static FILE *libbpf_err = NULL;
+    if (!libbpf_err)  {
+        libbpf_err = fopen("libbpf.log", "a");
+        if (!libbpf_err) {
+            fprintf(stderr, "Cannot open libbpf.log");
+            exit(1);
+        }
+    }
+
+    return vfprintf(libbpf_err, format, args);
 }
 
 #endif /* _NETDATA_CORE_COMMON_H_ */

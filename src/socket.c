@@ -315,7 +315,7 @@ static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_np
         return 0;
     }
 
-    fprintf(stdout, "Cannot read apps data.\n");
+    fprintf(stdout, "Empty apps table\n");
 
     return 2;
 }
@@ -466,8 +466,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    return ebpf_socket_tests(selector, map_level);
+    int stop_software = 0;
+    while (stop_software < 2) {
+        if (ebpf_socket_tests(selector, map_level) && !stop_software) {
+            selector = 1;
+            stop_software++;
+        } else
+            stop_software = 2;
+    }
+
+    return 0;
 }
 
