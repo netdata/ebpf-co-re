@@ -5,16 +5,13 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+env:
+  KERNEL_VERSION: 5.15.63
+  MASKED_KERNEL_VERSION: 5.15.0
+  LIBC: glibc
 jobs:
   build-artifacts:
     name: Build Artifacts
-    strategy:
-      fail-fast: false
-      matrix:
-        kernel_version:
-          - '5.15.63'
-        libc:
-          - glibc
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,7 +21,7 @@ jobs:
       - name: Run build.sh
         run: |
           os=core
-          ./build.sh ${{ matrix.kernel_version }} ${{ matrix.libc }} "${os}"
+          ./build.sh "${KERNEL_VERSION}" "${LIBC}" "${os}"
       - name: List Artifacts
         run: |
           ls -lah artifacts
@@ -33,5 +30,66 @@ jobs:
         uses: actions/upload-artifact@v3
         if: success()
         with:
-          name: artifacts-${{ matrix.kernel_version }}-${{ matrix.libc }}
+          name: artifacts-${KERNEL_VERSION}-${LIBC}
           path: artifacts
+  run-tests:
+    name: Run test into multiple VMs
+    runs-on: macos-10.15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {name: "debian11", url: "https://cache.netdata.cloud/vagrant/debian/debian11/vm.json"}
+          - {name: "ubuntu2110", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/vm.json"}
+          - {name: "ubuntu2204", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2204/vm.json"}
+#          - {name: "rockylinux8", url: "https://cache.netdata.cloud/vagrant/rockylinux/rockylinux8/vm.json"}
+#          - {name: "almalinux8", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux8/vm.json"}
+#          - {name: "almalinux9", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux9/vm.json"}
+#          - {name: "fedora35", url: "https://cache.netdata.cloud/vagrant/fedora/fedora35/vm.json"}
+#          - {name: "fedora36", url: "https://cache.netdata.cloud/vagrant/fedora/fedora36/vm.json"}
+#          - {name: "oraclelinux8", url: "https://cache.netdata.cloud/vagrant/oraclelinux/oraclelinux8/vm.json"}
+#          - {name: "archlinux", url: "https://cache.netdata.cloud/vagrant/archlinux/archlinux/vm.json"}
+#          - {name: "opensuse154", url: "https://cache.netdata.cloud/vagrant/opensuse/opensuse154/vm.json"}
+    needs: build-artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Retrieve Dist Tarball
+        id: fetch-dist
+        uses: actions/download-artifact@v3
+        with:
+          name: artifacts-${KERNEL_VERSION}-${LIBC}
+          path: src
+      - name: Extract artifact
+        working-directory: src
+        run: |
+          tar -xzf netdata_ebpf-co-re-${LIBC}-${MASKED_KERNEL_VERSION}.tar.xz
+      - name: Update Vagrant and vBox
+        working-directory: src
+        run: |
+          brew upgrade vagrant
+          brew upgrade --cask virtualbox
+      - name: Create VM
+        uses: nick-invision/retry@v2
+        with:
+          timeout_seconds: 1200
+          max_attempts: 3
+          command: |
+            vagrant box add ${{ matrix.url }} --name ${{ matrix.name }}
+            vagrant destroy ${{ matrix.name }} -f || true
+            vagrant init ${{ matrix.name }} ${{ matrix.url }} --template .github/templates/Vagrantfile.erb --force
+            vagrant up
+      - name: Build test binaries
+        id: build
+        run: |
+          vagrant ssh -- -t "sudo /vagrant/src/tests/install-test-dependencies.sh"
+          vagrant ssh -- -t "cd /vagrant/ && make clean && make"
+      - name: Run Tests
+        run: |
+          vagrant ssh -- -t "cd /vagrant/src/tests/ run_tests.sh"
+      - name: Verify results
+        run: |
+          echo "WIP"
