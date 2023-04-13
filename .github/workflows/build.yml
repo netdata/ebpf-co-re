@@ -81,7 +81,7 @@ jobs:
             vagrant box add ${{ matrix.url }} --name ${{ matrix.name }}
             vagrant destroy ${{ matrix.name }} -f || true
             vagrant init ${{ matrix.name }} ${{ matrix.url }} --template .github/templates/Vagrantfile.erb --force
-            vagrant up
+            vagrant up --provider=virtualbox
       - name: Build test binaries
         id: build
         run: |
