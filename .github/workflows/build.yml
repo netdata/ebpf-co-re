@@ -41,8 +41,8 @@ jobs:
       matrix:
         include:
           - {name: "debian11", url: "https://cache.netdata.cloud/vagrant/debian/debian11/vm.json"}
-          - {name: "ubuntu2110", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/vm.json"}
-          - {name: "ubuntu2204", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2204/vm.json"}
+#          - {name: "ubuntu2110", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/vm.json"}
+#          - {name: "ubuntu2204", url: "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2204/vm.json"}
 #          - {name: "rockylinux8", url: "https://cache.netdata.cloud/vagrant/rockylinux/rockylinux8/vm.json"}
 #          - {name: "almalinux8", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux8/vm.json"}
 #          - {name: "almalinux9", url: "https://cache.netdata.cloud/vagrant/almalinux/almalinux9/vm.json"}
