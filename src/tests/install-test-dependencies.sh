@@ -4,12 +4,12 @@ set +e
 
 # This script needs to be run as 'root' user or with 'sudo'
 
-DEBIAN_DEPS=( make gcc pkg-config libelf-dev clang llvm bpftool )
-UBUNTU_DEPS=( make gcc pkg-config libelf-dev clang llvm "linux-tools-$(uname -r)" "linux-cloud-tools-$(uname -r)" )
-RPM_DEPS=( make gcc pkg-config elfutils-libelf-devel clang llvm bpftool )
-ALPINE_DEPS=( make gcc pkgconf clang llvm linux-tools linux-headers zlib-dev elfutils-dev musl-dev )
-ARCH_DEPS=( make gcc pkg-config libelf clang llvm bpf )
-SUSE_DEPS=( make gcc pkg-config libelf-devel clang llvm bpftool )
+DEBIAN_DEPS=( "make" "gcc" "pkg-config" "libelf-dev" "clang" "llvm" "bpftool" )
+UBUNTU_DEPS=( "make" "gcc" "pkg-config" "libelf-dev" "clang" "llvm" "linux-tools-$(uname -r)" "linux-cloud-tools-$(uname -r)" )
+RPM_DEPS=( "make" "gcc" "pkg-config" "elfutils-libelf-devel" "clang" "llvm" "bpftool" )
+ALPINE_DEPS=( "make" "gcc" "pkgconf" "clang" "llvm" "linux-tools" "linux-headers" "zlib-dev" "elfutils-dev" "musl-dev" )
+ARCH_DEPS=( "make" "gcc" "pkg-config" "libelf" "clang" "llvm" "bpf" )
+SUSE_DEPS=( "make" "gcc" "pkg-config" "libelf-devel" "clang" "llvm" "bpftool" )
 
 if command -v apt &> /dev/null; then
     if lsb_release -a | grep -i debian &>/dev/null; then
