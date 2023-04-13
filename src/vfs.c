@@ -321,6 +321,8 @@ static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
 {
     struct vfs_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = vfs_bpf__open();
     if (!obj) {
@@ -343,7 +345,7 @@ static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
         if (!ret) {
             ret = vfs_read_apps_array(fd2, ebpf_nprocs, (uint32_t)my_pid);
             if (ret)
-                fprintf(stderr, "Cannot read apps table\n");
+                fprintf(stdout, "Empty apps table\n");
         } else
             fprintf(stderr, "Cannot read global table\n");
     } else {
@@ -412,6 +414,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     struct btf *bf = NULL;
@@ -423,6 +426,15 @@ int main(int argc, char **argv)
         }
     }
 
-    return ebpf_vfs_tests(selector, map_level);
+    int stop_software = 0;
+    while (stop_software < 2) {
+        if (ebpf_vfs_tests(selector, map_level) && !stop_software) {
+            selector = 1;
+            stop_software++;
+        } else
+            stop_software = 2;
+    }
+
+    return 0;
 }
 

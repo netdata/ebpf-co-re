@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 
 #include "softirq.skel.h"
 
@@ -74,6 +75,8 @@ static int ebpf_softirq_tests()
 {
     struct softirq_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = softirq_bpf__open();
     if (!obj) {
@@ -130,6 +133,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     return ebpf_softirq_tests();

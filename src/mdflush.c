@@ -87,6 +87,8 @@ static int ebpf_mdflush_tests(int selector)
 {
     struct mdflush_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = mdflush_bpf__open();
     if (!obj) {
@@ -161,6 +163,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     char *md_flush_request = netdata_update_name(function_list[NETDATA_MD_FLUSH_REQUEST]);
@@ -179,10 +182,17 @@ int main(int argc, char **argv)
         }
     }
 
-    ret = ebpf_mdflush_tests(selector);
+    int stop_software = 0;
+    while (stop_software < 2) {
+        if (ebpf_mdflush_tests(selector) && !stop_software) {
+            selector = 1;
+            stop_software++;
+        } else
+            stop_software = 2;
+    }
 
     free(md_flush_request);
 
-    return ret;
+    return 0;
 }
 

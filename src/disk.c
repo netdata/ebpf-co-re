@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "netdata_defs.h"
+#include "netdata_core_common.h"
 #include "netdata_tests.h"
 
 #include "disk.skel.h"
@@ -69,6 +70,8 @@ static int ebpf_disk_tests()
 {
     struct disk_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     obj = disk_bpf__open();
     if (!obj) {
@@ -125,6 +128,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     return ebpf_disk_tests();

@@ -13,24 +13,24 @@ jobs:
     name: Build Artifacts
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        submodules: true
-    - name: Run build.sh
-      run: |
-        os=core
-        ./build.sh ${KERNEL_VERSION} ${LIBC} "${os}"
-    - name: List Artifacts
-      run: |
-        ls -lah artifacts
-        test -f artifacts/netdata_ebpf-*.tar.xz
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v3
-      if: success()
-      with:
-        name: artifacts-${KERNEL_VERSION}-${LIBC}
-        path: artifacts
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Run build.sh
+        run: |
+          os=core
+          ./build.sh "${KERNEL_VERSION}" "${LIBC}" "${os}"
+      - name: List Artifacts
+        run: |
+          ls -lah artifacts
+          test -f artifacts/netdata_ebpf-*.tar.xz
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: artifacts-${KERNEL_VERSION}-${LIBC}
+          path: artifacts
   run-tests:
     name: Run test into multiple VMs
     runs-on: macos-10.15
@@ -60,12 +60,15 @@ jobs:
         id: fetch-dist
         uses: actions/download-artifact@v3
         with:
-          name: artifacts-{KERNEL_VERSION}-{LIBC}
+          name: artifacts-${KERNEL_VERSION}-${LIBC}
           path: src
       - name: Extract artifact
         working-directory: src
         run: |
-          tar -xzf netdata_ebpf-co-re-glibc.tar.xz
+          MASKED_KERNEL_VERSION=$(echo $KERNEL_VERSION | sed 's/[0-9]\+$/0/')
+          export MASKED_KERNEL_VERSION
+          echo "MASKED_KERNEL_VERSION=$(echo $KERNEL_VERSION | sed 's/[0-9]\+$/0/')" >> $GITHUB_ENV
+          tar -xzf netdata_ebpf-co-re-${LIBC}-${MASKED_KERNEL_VERSION}.tar.xz
       - name: Update Vagrant and vBox
         working-directory: src
         run: |
@@ -85,9 +88,10 @@ jobs:
         id: build
         run: |
           vagrant ssh -- -t "sudo /vagrant/src/tests/install-test-dependencies.sh"
-          vagrant ssh -- -t "git git submodule update --init --recursive"
           vagrant ssh -- -t "cd /vagrant/ && make clean && make"
       - name: Run Tests
-        if: always()
         run: |
-          vagrant ssh -- -t "cd /vagrant/src/tests/ run_tests.sh "
+          vagrant ssh -- -t "cd /vagrant/src/tests/ run_tests.sh"
+      - name: Verify results
+        run: |
+          echo "WIP"

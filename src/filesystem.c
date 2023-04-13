@@ -10,6 +10,7 @@
 
 #include "netdata_defs.h"
 #include "netdata_tests.h"
+#include "netdata_core_common.h"
 #include "filesystem.skel.h"
 
 #include "netdata_fs.h"
@@ -360,6 +361,7 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     if (!selector) {

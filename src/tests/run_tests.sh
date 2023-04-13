@@ -49,7 +49,7 @@ for i in "${three_tests[@]}" ; do
         log_file_error="output_${i}_error.log"
         log_files_success+=("$log_file_success")
         log_files_error+=("$log_file_error")
-        runThreeTests ${TESTS_FOLDER}/$i >> output_"${i}"_success.log 2>> output_"${i}"_error.log &
+        runThreeTests "${TESTS_FOLDER}"/"$i" >> output_"${i}"_success.log 2>> output_"${i}"_error.log &
     }
 done
 
@@ -68,7 +68,7 @@ for i in "${one_test[@]}" ; do
         log_file_error="output_${i}_error.log"
         log_files_success+=("$log_file_success")
         log_files_error+=("$log_file_error")
-        runOneTest $i >> output_"${i}"_success.log 2>> output_"${i}"_error.log &
+        runOneTest "$i" >> output_"${i}"_success.log 2>> output_"${i}"_error.log &
     }
 done
 

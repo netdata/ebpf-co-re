@@ -228,6 +228,8 @@ int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_lev
 {
     struct shm_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (ebpf_nprocs < 0)
+        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
 
     if (bf)
         selector = ebpf_find_functions(bf, selector, syscalls, NETDATA_SHM_END);
@@ -318,6 +320,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
     
     struct btf *bf = NULL;
