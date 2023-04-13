@@ -71,7 +71,6 @@ jobs:
         working-directory: src
         run: |
           brew upgrade vagrant
-          brew upgrade --cask virtualbox
       - name: Create VM
         uses: nick-invision/retry@v2
         with:
