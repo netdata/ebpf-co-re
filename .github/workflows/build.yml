@@ -65,9 +65,8 @@ jobs:
       - name: Extract artifact
         working-directory: src
         run: |
-          MASKED_KERNEL_VERSION=$(echo $KERNEL_VERSION | sed 's/[0-9]\+$/0/')
+          MASKED_KERNEL_VERSION=$(echo ${KERNEL_VERSION} | sed 's/[0-9]\+$/0/')
           export MASKED_KERNEL_VERSION
-          echo "MASKED_KERNEL_VERSION=$(echo $KERNEL_VERSION | sed 's/[0-9]\+$/0/')" >> $GITHUB_ENV
           tar -xzf netdata_ebpf-co-re-${LIBC}-${MASKED_KERNEL_VERSION}.tar.xz
       - name: Update Vagrant and vBox
         working-directory: src
