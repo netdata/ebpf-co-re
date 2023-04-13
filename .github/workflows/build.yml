@@ -66,7 +66,7 @@ jobs:
       - name: Extract artifact
         working-directory: src
         run: |
-          tar -xzf netdata_ebpf-co-re-${LIBC}-${MASKED_KERNEL_VERSION}.tar.xz
+          tar -xzf netdata_ebpf-co-re-"${LIBC}"-"${MASKED_KERNEL_VERSION}"".tar.xz
       - name: Update Vagrant and vBox
         working-directory: src
         run: |
@@ -84,7 +84,7 @@ jobs:
       - name: Build test binaries
         id: build
         run: |
-          vagrant ssh -- -t "sudo /vagrant/src/tests/install-test-dependencies.sh"
+          vagrant ssh -- -t "sudo sh /vagrant/src/tests/install-test-dependencies.sh"
           vagrant ssh -- -t "cd /vagrant/ && make clean && make"
       - name: Run Tests
         run: |
