@@ -88,7 +88,8 @@ jobs:
           vagrant ssh -- -t "cd /vagrant/ && make clean && make"
       - name: Run Tests
         run: |
-          vagrant ssh -- -t "cd /vagrant/src/tests/ run_tests.sh"
+          vagrant ssh -- -t "cd /vagrant/src/tests/ && ./run_tests.sh"
       - name: Verify results
         run: |
-          vagrant ssh -- -t "cd /vagrant/src/tests/ run_tests.sh"
+          vagrant ssh -- -t "grep libbpf /vagrant/src/tests/error.log || exit 1"
+          
