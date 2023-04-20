@@ -72,15 +72,15 @@ for i in "${one_test[@]}" ; do
     }
 done
 
-echo "We are not running filesystem or mdflush, because they can generate error, please run them."
-
+echo "We are not running filesystem or mdflush, because they can generate errors, please run them."
+echo "Waiting for all the background jobs to be completed, this may take some time. . ."
 
 wait
 
 # Concatenate log files 
 
-cat "${log_files_success[@]}" > success.log
-cat "${log_files_error[@]}" > error.log
+cat "${log_files_success[@]}" >> success.log
+cat "${log_files_error[@]}" >> error.log
 rm "${log_files_success[@]}"
 rm "${log_files_error[@]}"
 

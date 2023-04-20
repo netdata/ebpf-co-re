@@ -67,7 +67,7 @@ jobs:
         working-directory: src
         run: |
           tar -xzf netdata_ebpf-co-re-"${LIBC}"-"${MASKED_KERNEL_VERSION}".tar.xz
-      - name: Update Vagrant and vBox
+      - name: Update Vagrant
         working-directory: src
         run: |
           brew upgrade vagrant
@@ -92,4 +92,3 @@ jobs:
       - name: Verify results
         run: |
           vagrant ssh -- -t "grep libbpf /vagrant/src/tests/error.log || exit 1"
-          
