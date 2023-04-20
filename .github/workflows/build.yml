@@ -81,14 +81,14 @@ jobs:
             vagrant destroy ${{ matrix.name }} -f || true
             vagrant init ${{ matrix.name }} ${{ matrix.url }} --template .github/templates/Vagrantfile.erb --force
             vagrant up --provider=virtualbox
-      - name: Build test binaries
+      - name: Setup test environment
         id: build
         run: |
           vagrant ssh -- -t "sudo sh /vagrant/src/tests/install-test-dependencies.sh"
           vagrant ssh -- -t "cd /vagrant/ && make clean && make"
       - name: Run Tests
         run: |
-          vagrant ssh -- -t "cd /vagrant/src/tests/ && ./run_tests.sh"
+          vagrant ssh -- -t "cd /vagrant/src/tests/ && sudo sh run_tests.sh"
       - name: Verify results
         run: |
           vagrant ssh -- -t "grep libbpf /vagrant/src/tests/error.log || exit 1"
