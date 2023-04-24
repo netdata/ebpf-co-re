@@ -89,4 +89,4 @@ jobs:
           vagrant ssh -- -t "cd /vagrant/src/tests/ && sudo sh run_tests.sh"
       - name: Verify results
         run: |
-          vagrant ssh -- -t "grep libbpf /vagrant/src/tests/*.log"
+          vagrant ssh -- -t "grep -q libbpf /vagrant/src/tests/*.log && (echo 'Found libpf errors in logs'; exit 1) || echo 'No errors found'"
