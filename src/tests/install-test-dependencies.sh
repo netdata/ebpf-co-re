@@ -19,7 +19,7 @@ str_in_list() {
 }
 
 get_system_info() {
-  SYSARCH="$(uname -m)"
+  export SYSARCH="$(uname -m)"
 
   case "$(uname -s)" in
     Linux)
@@ -41,11 +41,12 @@ get_system_info() {
 
           DISTRO="${ID}"
           SYSVERSION="${VERSION_ID}"
-          SYSCODENAME="${VERSION_CODENAME}"
+          export SYSCODENAME="${VERSION_CODENAME}"
         else
           DISTRO="unknown"
           DISTRO_COMPAT_NAME="unknown"
           SYSVERSION="unknown"
+          # shellcheck disable=SC2034
           SYSCODENAME="unknown"
         fi
       else
@@ -70,10 +71,12 @@ get_system_info() {
       esac
       ;;
     Darwin)
+      # shellcheck disable=SC2034
       SYSTYPE="Darwin"
       SYSVERSION="$(sw_vers -buildVersion)"
       ;;
     FreeBSD)
+      # shellcheck disable=SC2034
       SYSTYPE="FreeBSD"
       SYSVERSION="$(uname -K)"
       ;;
