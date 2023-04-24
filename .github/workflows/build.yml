@@ -77,15 +77,13 @@ jobs:
           timeout_seconds: 1200
           max_attempts: 3
           command: |
-            vagrant box add ${{ matrix.url }} --name ${{ matrix.name }}
-            vagrant destroy ${{ matrix.name }} -f || true
             vagrant init ${{ matrix.name }} ${{ matrix.url }} --template .github/templates/Vagrantfile.erb --force
             vagrant up --provider=virtualbox
       - name: Setup test environment
         id: build
         run: |
           vagrant ssh -- -t "sudo sh /vagrant/src/tests/install-test-dependencies.sh"
-          vagrant ssh -- -t "cd /vagrant/ && make clean && make"
+          vagrant ssh -- -t "cd /vagrant && make clean && make"
       - name: Run Tests
         run: |
           vagrant ssh -- -t "cd /vagrant/src/tests/ && sudo sh run_tests.sh"

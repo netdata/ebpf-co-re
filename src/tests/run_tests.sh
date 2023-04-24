@@ -75,7 +75,7 @@ done
 echo "We are not running filesystem or mdflush, because they can generate errors, please run them."
 echo "Waiting for all the background jobs to be completed, this may take some time. . ."
 
-time wait
+wait
 
 echo "Done"
 
@@ -94,6 +94,4 @@ for i in $log_files_error ; do
     }
 done
 
-
-
-ls -lh error.log success.log
+ls -lh *.log
