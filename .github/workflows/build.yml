@@ -91,4 +91,4 @@ jobs:
           vagrant ssh -- -t "cd /vagrant/src/tests/ && sudo sh run_tests.sh"
       - name: Verify results
         run: |
-          vagrant ssh -- -t "grep libbpf /vagrant/src/tests/*.log || grep libbpf /vagrant/src/tests/*.log && exit 1"
+          vagrant ssh -- -t "grep libbpf /vagrant/src/tests/*.log"
