@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-three_tests=( "cachestat" "dc" "fd" "mount" "process" "shm" "socket" "swap" "sync" "vfs" )
-one_test=( "disk" "hardirq" "oomkill" "softirq" )
+three_tests="cachestat dc fd mount process shm socket swap sync vfs"
+one_test="disk hardirq oomkill softirq"
 end_loop=
 ADDITIONAL_ARG=
 
@@ -43,7 +43,7 @@ runThreeTests () {
 }
 
 echo "Running all tests with three options"
-for i in "${three_tests[@]}" ; do
+for i in $three_tests ; do
     {
         log_file_success="output_${i}_success.log"
         log_file_error="output_${i}_error.log"
@@ -62,7 +62,7 @@ runOneTest () {
 
 
 echo "Running all tests with single option"
-for i in "${one_test[@]}" ; do 
+for i in $one_test ; do 
     {
         log_file_success="output_${i}_success.log"
         log_file_error="output_${i}_error.log"
