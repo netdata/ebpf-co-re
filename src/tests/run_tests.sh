@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2028
 
 three_tests="cachestat dc fd mount process shm socket swap sync vfs"
 one_test="disk hardirq oomkill softirq"
@@ -82,16 +83,16 @@ echo "Done"
 # Concatenate success log files 
 for i in $log_files_success ; do
     {
-        cat $i >> success.log
-        rm $i
+        cat "$i" >> success.log
+        rm "$i"
     }
 done
 # Concatenate error log files
 for i in $log_files_error ; do
     {
-        cat $i >> error.log
-        rm $i
+        cat "$i" >> error.log
+        rm "$i"
     }
 done
 
-ls -lh *.log
+ls -lh -- *.log

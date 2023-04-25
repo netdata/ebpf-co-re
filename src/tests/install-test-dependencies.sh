@@ -19,7 +19,8 @@ str_in_list() {
 }
 
 get_system_info() {
-  export SYSARCH="$(uname -m)"
+  SYSARCH="$(uname -m)"
+  export SYSARCH
 
   case "$(uname -s)" in
     Linux)
