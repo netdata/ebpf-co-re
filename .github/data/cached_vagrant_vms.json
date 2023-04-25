@@ -1,0 +1,16 @@
+{
+    "vagrant_vms": [
+    {"name": "debian11", "url": "https://cache.netdata.cloud/vagrant/debian/debian11/vm.json"},
+    {"name": "ubuntu2110", "url": "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2110/vm.json"},
+    {"name": "ubuntu2204", "url": "https://cache.netdata.cloud/vagrant/ubuntu/ubuntu2204/vm.json"},
+    {"name": "rockylinux8", "url": "https://cache.netdata.cloud/vagrant/rockylinux/rockylinux8/vm.json"},
+    {"name": "almalinux8", "url": "https://cache.netdata.cloud/vagrant/almalinux/almalinux8/vm.json"},
+    {"name": "almalinux9", "url": "https://cache.netdata.cloud/vagrant/almalinux/almalinux9/vm.json"},
+    {"name": "fedora35", "url": "https://cache.netdata.cloud/vagrant/fedora/fedora35/vm.json"},
+    {"name": "fedora36", "url": "https://cache.netdata.cloud/vagrant/fedora/fedora36/vm.json"},
+    {"name": "oraclelinux8", "url": "https://cache.netdata.cloud/vagrant/oraclelinux/oraclelinux8/vm.json"},
+    {"name": "archlinux", "url": "https://cache.netdata.cloud/vagrant/archlinux/archlinux/vm.json"},
+    {"name": "opensuse153", "url": "https://cache.netdata.cloud/vagrant/opensuse/opensuse153/vm.json"},
+    {"name": "opensuse154", "url": "https://cache.netdata.cloud/vagrant/opensuse/opensuse154/vm.json"}
+    ]
+}
