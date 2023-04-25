@@ -34,7 +34,7 @@ jobs:
           path: artifacts
   run-tests:
     name: Run test into multiple VMs
-    runs-on: macos-10.15
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -90,4 +90,4 @@ jobs:
           vagrant ssh -- -t "cd /vagrant/src/tests/ && sudo sh run_tests.sh"
       - name: Verify results
         run: |
-          vagrant ssh -- -t "grep -q libbpf /vagrant/src/tests/*.log && (echo 'Found libpf errors in logs'; exit 1) || echo 'No errors found'" 
+          vagrant ssh -- -t "grep -q libbpf /vagrant/src/tests/*.log && (echo 'Found libpf errors in logs'; exit 1) || echo 'No errors found'"
