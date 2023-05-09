@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         kernel_version:
-          - '5.15.63'
+          - '6.1.26'
         libc:
           - glibc
     runs-on: ubuntu-latest
