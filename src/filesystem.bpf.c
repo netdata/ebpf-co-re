@@ -20,6 +20,13 @@ struct {
 } tbl_fs SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u64);
+    __uint(max_entries, NETDATA_CONTROLLER_END);
+} fs_ctrl SEC(".maps");
+
+struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __type(key, __u32);
     __type(value, __u64);
@@ -41,6 +48,8 @@ static __always_inline int netdata_fs_entry()
 
     bpf_map_update_elem(&tmp_fs, &pid, &ts, BPF_ANY);
 
+    libnetdata_update_global(&fs_ctrl, NETDATA_CONTROLLER_TEMP_TABLE_ADD, 1);
+
     return 0;
 }
 
@@ -56,6 +65,8 @@ static __always_inline int netdata_fs_store_bin(__u32 selection)
 
     data = bpf_ktime_get_ns() - *fill;
     bpf_map_delete_elem(&tmp_fs, &pid);
+
+    libnetdata_update_global(&fs_ctrl, NETDATA_CONTROLLER_TEMP_TABLE_DEL, 1);
 
     // Skip entries with backward time
     if ( (s64)data < 0)
