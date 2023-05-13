@@ -69,7 +69,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
-    __type(value, __u32);
+    __type(value, __u64);
     __uint(max_entries, NETDATA_CONTROLLER_END);
 } socket_ctrl SEC(".maps");
 
@@ -172,17 +172,23 @@ static __always_inline void ebpf_socket_reset_bandwidth(__u32 pid, __u32 tgid)
     bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
 }
 
+static __always_inline int netdata_socket_not_update_apps()
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
+    if (apps && *apps)
+        return 0;
+
+    return 1;
+}
+
 static __always_inline void update_pid_connection(__u8 version)
 {
     netdata_bandwidth_t *stored;
     netdata_bandwidth_t data = { };
 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps) {
-        if (*apps == 0)
-            return;
-    } else
+    if (netdata_socket_not_update_apps())
         return;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -210,6 +216,8 @@ static __always_inline void update_pid_connection(__u8 version)
             data.ipv6_connect = 1;
 
         bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 }
 
@@ -219,11 +227,7 @@ static __always_inline void update_pid_cleanup(__u64 drop, __u64 close)
     netdata_bandwidth_t data = { };
 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps) {
-        if (*apps == 0)
-            return;
-    } else
+    if (netdata_socket_not_update_apps())
         return;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -249,6 +253,8 @@ static __always_inline void update_pid_cleanup(__u64 drop, __u64 close)
             data.close = 1;
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 }
 
@@ -300,17 +306,17 @@ static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u
         }
 
         bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 }
 
 static __always_inline void update_pid_table(__u64 sent, __u64 received, __u8 protocol)
 {
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    if (netdata_socket_not_update_apps())
+        return;
 
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps)
-        if (*apps == 1)
-            update_pid_bandwidth((__u64)sent, received, protocol);
+    update_pid_bandwidth((__u64)sent, received, protocol);
 }
 
 static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t sent, int ret)
@@ -378,6 +384,8 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
         data.pid = pid;
         data.counter = 1;
         bpf_map_update_elem(&tbl_lports, &idx, &data, BPF_ANY);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -502,6 +510,8 @@ static inline int netdata_common_socket_cleanup()
     netdata_bandwidth_t *removeme = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &key);
     if (removeme) {
         bpf_map_delete_elem(&tbl_bandwidth, &key);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;
