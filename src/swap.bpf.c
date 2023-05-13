@@ -28,7 +28,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
-    __type(value, __u32);
+    __type(value, __u64);
     __uint(max_entries, NETDATA_CONTROLLER_END);
 } swap_ctrl SEC(".maps");
 
@@ -38,17 +38,25 @@ struct {
  *
  ***********************************************************************************/
 
+static __always_inline int netdata_swap_not_update_apps()
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
+    if (apps && *apps)
+        return 0;
+
+    return 1;
+}
+
 static __always_inline int common_readpage()
 {
     netdata_swap_access_t data = {};
 
     libnetdata_update_global(&tbl_swap, NETDATA_KEY_SWAP_READPAGE_CALL, 1);
 
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    __u32 key = 0;
+    if (netdata_swap_not_update_apps())
+        return 0;
 
     netdata_swap_access_t *fill = netdata_get_pid_structure(&key, &swap_ctrl, &tbl_pid_swap);
     if (fill) {
@@ -56,6 +64,8 @@ static __always_inline int common_readpage()
     } else {
         data.read = 1;
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -67,11 +77,9 @@ static __always_inline int common_writepage()
 
     libnetdata_update_global(&tbl_swap, NETDATA_KEY_SWAP_WRITEPAGE_CALL, 1);
 
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    __u32 key = 0;
+    if (netdata_swap_not_update_apps())
+        return 0;
 
     netdata_swap_access_t *fill = netdata_get_pid_structure(&key, &swap_ctrl, &tbl_pid_swap);
     if (fill) {
@@ -79,6 +87,8 @@ static __always_inline int common_writepage()
     } else {
         data.write = 1;
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -87,17 +97,15 @@ static __always_inline int common_writepage()
 static __always_inline int netdata_release_task_swap()
 {
     netdata_swap_access_t *removeme;
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
-    if (apps) {
-        if (*apps == 0)
-            return 0;
-    } else
+    __u32 key = 0;
+    if (netdata_swap_not_update_apps())
         return 0;
 
     removeme = netdata_get_pid_structure(&key, &swap_ctrl, &tbl_pid_swap);
     if (removeme) {
         bpf_map_delete_elem(&tbl_pid_swap, &key);
+
+        libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;
