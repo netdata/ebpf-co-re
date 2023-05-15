@@ -248,7 +248,7 @@ static int ebpf_fd_tests(int selector, enum netdata_apps_level map_level)
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
-    if (ret && !selector) {
+    if (ret && selector != NETDATA_MODE_PROBE) {
         fd_bpf__destroy(obj);
 
         obj = fd_bpf__open();
