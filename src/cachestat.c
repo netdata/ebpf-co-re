@@ -267,6 +267,19 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && !selector) {
+        cachestat_bpf__destroy(obj);
+
+        obj = cachestat_bpf__open();
+        if (!obj) {
+            fprintf(stderr, "Cannot open or load BPF object\n");
+            return 2;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.cstat_ctrl);
         ebpf_core_fill_ctrl(obj->maps.cstat_ctrl, map_level);
