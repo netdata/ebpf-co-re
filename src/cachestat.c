@@ -261,9 +261,7 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
 
     obj = cachestat_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
@@ -272,8 +270,7 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
 
         obj = cachestat_bpf__open();
         if (!obj) {
-            fprintf(stderr, "Cannot open or load BPF object\n");
-            return 2;
+            goto load_error;
         }
 
         selector = NETDATA_MODE_PROBE;
@@ -304,6 +301,9 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
     cachestat_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 static inline void fill_cachestat_fcnt()
