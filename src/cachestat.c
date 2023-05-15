@@ -122,6 +122,59 @@ static inline void netdata_set_trampoline_target(struct cachestat_bpf *obj)
                                    cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
 }
 
+static inline int netdata_attach_kprobe_target(struct cachestat_bpf *obj)
+{
+    obj->links.netdata_add_to_page_cache_lru_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_add_to_page_cache_lru_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU]);
+    int ret = libbpf_get_error(obj->links.netdata_add_to_page_cache_lru_kprobe);
+    if (ret)
+        goto endnakt;
+
+    obj->links.netdata_mark_page_accessed_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_mark_page_accessed_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED]);
+    ret = libbpf_get_error(obj->links.netdata_mark_page_accessed_kprobe);
+    if (ret)
+        goto endnakt;
+
+    if (cachestat_names[0].optional) {
+        obj->links.netdata_folio_mark_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_folio_mark_dirty_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_folio_mark_dirty_kprobe);
+        if (ret)
+            goto endnakt;
+
+    } else if (cachestat_names[1].optional) {
+        obj->links.netdata_set_page_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_set_page_dirty_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_set_page_dirty_kprobe);
+        if (ret)
+            goto endnakt;
+
+    } else {
+        obj->links.netdata_account_page_dirtied_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_account_page_dirtied_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_account_page_dirtied_kprobe);
+        if (ret)
+            goto endnakt;
+
+    }
+
+    obj->links.netdata_mark_buffer_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_mark_buffer_dirty_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
+    ret = libbpf_get_error(obj->links.netdata_mark_buffer_dirty_kprobe);
+    if (ret)
+        goto endnakt;
+
+    obj->links.netdata_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
+    ret = libbpf_get_error(obj->links.netdata_release_task_kprobe);
+    if (ret)
+        goto endnakt;
+
+endnakt:
+    return ret;
+}
+
 static inline int ebpf_load_and_attach(struct cachestat_bpf *obj, int selector)
 {
     if (!selector) { //trampoline
