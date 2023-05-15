@@ -193,7 +193,10 @@ static inline int ebpf_load_and_attach(struct cachestat_bpf *obj, int selector)
         return -1;
     }
 
-    ret = cachestat_bpf__attach(obj);
+    if (!selector)
+        ret = cachestat_bpf__attach(obj);
+    else
+        ret = netdata_attach_kprobe_target(obj);
 
     if (!ret) {
         fprintf(stdout, "%s: loaded with success\n", (!selector) ? "trampoline" : "probe");
