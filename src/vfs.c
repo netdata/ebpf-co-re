@@ -326,12 +326,22 @@ static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
 
     obj = vfs_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        vfs_bpf__destroy(obj);
+
+        obj = vfs_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.vfs_ctrl);
         ebpf_core_fill_ctrl(obj->maps.vfs_ctrl, map_level);
@@ -357,6 +367,9 @@ static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
     vfs_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 int main(int argc, char **argv)
