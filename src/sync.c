@@ -158,12 +158,22 @@ static int ebpf_fcnt_tests(int (*fcnt)(int), enum netdata_sync_enum idx, int sel
 
     obj = sync_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector, idx);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        sync_bpf__destroy(obj);
+
+        obj = sync_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector, idx);
+    }
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.tbl_sync) ;
         ret = common_fcnt_tests(fd, fcnt);
@@ -172,7 +182,10 @@ static int ebpf_fcnt_tests(int (*fcnt)(int), enum netdata_sync_enum idx, int sel
 
     sync_bpf__destroy(obj);
 
-    return 0;
+    return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 /****************************************************************************************
