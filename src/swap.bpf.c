@@ -130,7 +130,7 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
 }
 
 SEC("kprobe/release_task")
-int BPF_KPROBE(netdata_release_task_probe)
+int BPF_KPROBE(netdata_swap_release_task_probe)
 {
     return netdata_release_task_swap();
 }

@@ -26,7 +26,7 @@ static void netdata_ebpf_disable_probe(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_swap_release_task_probe, false);
 }
 
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
@@ -62,9 +62,9 @@ static int attach_kprobe(struct swap_bpf *obj)
     if (ret)
         return -1;
 
-    obj->links.netdata_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_probe,
+    obj->links.netdata_swap_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_release_task_probe,
                                                                        false, function_list[NETDATA_SWAP_RELEASE_TASK]);
-    ret = libbpf_get_error(obj->links.netdata_release_task_probe);
+    ret = libbpf_get_error(obj->links.netdata_swap_release_task_probe);
     if (ret)
         return -1;
 
