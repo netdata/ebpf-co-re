@@ -122,6 +122,59 @@ static inline void netdata_set_trampoline_target(struct cachestat_bpf *obj)
                                    cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
 }
 
+static inline int netdata_attach_kprobe_target(struct cachestat_bpf *obj)
+{
+    obj->links.netdata_add_to_page_cache_lru_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_add_to_page_cache_lru_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU]);
+    int ret = libbpf_get_error(obj->links.netdata_add_to_page_cache_lru_kprobe);
+    if (ret)
+        goto endnakt;
+
+    obj->links.netdata_mark_page_accessed_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_mark_page_accessed_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED]);
+    ret = libbpf_get_error(obj->links.netdata_mark_page_accessed_kprobe);
+    if (ret)
+        goto endnakt;
+
+    if (cachestat_names[0].optional) {
+        obj->links.netdata_folio_mark_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_folio_mark_dirty_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_folio_mark_dirty_kprobe);
+        if (ret)
+            goto endnakt;
+
+    } else if (cachestat_names[1].optional) {
+        obj->links.netdata_set_page_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_set_page_dirty_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_set_page_dirty_kprobe);
+        if (ret)
+            goto endnakt;
+
+    } else {
+        obj->links.netdata_account_page_dirtied_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_account_page_dirtied_kprobe,
+                                                                        false, cachestat_fcnt[NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED]);
+        ret = libbpf_get_error(obj->links.netdata_account_page_dirtied_kprobe);
+        if (ret)
+            goto endnakt;
+
+    }
+
+    obj->links.netdata_mark_buffer_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_mark_buffer_dirty_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
+    ret = libbpf_get_error(obj->links.netdata_mark_buffer_dirty_kprobe);
+    if (ret)
+        goto endnakt;
+
+    obj->links.netdata_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_kprobe,
+                                                                    false, cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
+    ret = libbpf_get_error(obj->links.netdata_release_task_kprobe);
+    if (ret)
+        goto endnakt;
+
+endnakt:
+    return ret;
+}
+
 static inline int ebpf_load_and_attach(struct cachestat_bpf *obj, int selector)
 {
     if (!selector) { //trampoline
@@ -140,7 +193,10 @@ static inline int ebpf_load_and_attach(struct cachestat_bpf *obj, int selector)
         return -1;
     }
 
-    ret = cachestat_bpf__attach(obj);
+    if (!selector)
+        ret = cachestat_bpf__attach(obj);
+    else
+        ret = netdata_attach_kprobe_target(obj);
 
     if (!ret) {
         fprintf(stdout, "%s: loaded with success\n", (!selector) ? "trampoline" : "probe");
@@ -205,12 +261,22 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
 
     obj = cachestat_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        cachestat_bpf__destroy(obj);
+
+        obj = cachestat_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.cstat_ctrl);
         ebpf_core_fill_ctrl(obj->maps.cstat_ctrl, map_level);
@@ -235,6 +301,9 @@ static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
     cachestat_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 static inline void fill_cachestat_fcnt()

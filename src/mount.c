@@ -179,12 +179,22 @@ static int ebpf_mount_tests(int selector)
 
     obj = mount_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        mount_bpf__destroy(obj);
+
+        obj = mount_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
     if (!ret) {
         ret = call_syscalls();
         if (!ret) {
@@ -199,6 +209,9 @@ static int ebpf_mount_tests(int selector)
     mount_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 int main(int argc, char **argv)
@@ -218,21 +231,22 @@ int main(int argc, char **argv)
         if (c == -1)
             break;
 
-        switch (c) {
-            case 'h': {
+        switch (option_index) {    
+            case NETDATA_EBPF_CORE_IDX_HELP: {
                           ebpf_core_print_help(argv[0], "mount", 1, 0);
                           exit(0);
                       }
-            case 'p': {
-                          selector = 1;
+            case NETDATA_EBPF_CORE_IDX_PROBE: {
+                          selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 'r': {
-                          selector = 2;
+            case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
+                          fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead.\n");
+                          selector = NETDATA_MODE_PROBE;
                           break;
                       }
-            case 't': {
-                          selector = 0;
+            case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
+                          selector = NETDATA_MODE_TRAMPOLINE;
                           break;
                       }
             default: {

@@ -18,6 +18,22 @@
 
 #include "process.skel.h"
 
+enum core_process {
+    PROCESS_RELEASE_TASK_NAME,
+    PROCESS_SYS_CLONE,
+    PROCESS_SYS_CLONE3,
+    PROCESS_SYS_FORK,
+    PROCESS_KERNEL_CLONE,
+};
+
+static char *names[] = {
+    "release_task",
+    "__x64_sys_clone",
+    "__x64_sys_clone3",
+    "_do_fork",
+    "kernel_clone"
+};
+
 static void ebpf_disable_probes(struct process_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_release_task_probe, false);
@@ -43,13 +59,13 @@ static void ebpf_disable_trampoline(struct process_bpf *obj)
 static void ebpf_set_trampoline_target(struct process_bpf *obj)
 {
     bpf_program__set_attach_target(obj->progs.netdata_release_task_fentry, 0,
-                                   "release_task");
+                                   names[PROCESS_RELEASE_TASK_NAME]);
 
     bpf_program__set_attach_target(obj->progs.netdata_clone_fexit, 0,
-                                   "__x64_sys_clone");
+                                   names[PROCESS_SYS_CLONE]);
 
     bpf_program__set_attach_target(obj->progs.netdata_clone3_fexit, 0,
-                                   "__x64_sys_clone3");
+                                   names[PROCESS_SYS_CLONE3]);
 }
 
 #if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,3,0))
@@ -60,6 +76,27 @@ static inline void ebpf_disable_clone3(struct process_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_clone3_fexit, false);
 }
 #endif
+
+static inline int process_attach_kprobe_target(struct process_bpf *obj)
+{
+    obj->links.netdata_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_probe,
+                                                                    false, names[PROCESS_RELEASE_TASK_NAME]);
+    int ret = libbpf_get_error(obj->links.netdata_release_task_probe);
+    if (ret)
+        goto endakt;
+
+#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,9,16))
+    obj->links.netdata_do_fork_probe = bpf_program__attach_kprobe(obj->progs.netdata_do_fork_probe,
+                                                                    false, names[PROCESS_SYS_FORK]);
+    ret = libbpf_get_error(obj->links.netdata_do_fork_probe);
+#else
+    obj->links.netdata_kernel_clone_probe = bpf_program__attach_kprobe(obj->progs.netdata_kernel_clone_probe,
+                                                                    false, names[PROCESS_KERNEL_CLONE]);
+    ret = libbpf_get_error(obj->links.netdata_kernel_clone_probe);
+#endif
+endakt:
+    return ret;
+}
 
 static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
 {
@@ -92,7 +129,10 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
         return -1;
     }
 
-    ret = process_bpf__attach(obj);
+    if (!selector)
+        ret = process_bpf__attach(obj);
+    else
+        ret = process_attach_kprobe_target(obj);
 
     if (!ret) {
         fprintf(stdout, "Process loaded with success\n");
@@ -153,12 +193,22 @@ static int ebpf_process_tests(int selector, enum netdata_apps_level map_level)
 
     obj = process_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        process_bpf__destroy(obj);
+
+        obj = process_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.process_ctrl);
         ebpf_core_fill_ctrl(obj->maps.process_ctrl, map_level);
@@ -184,6 +234,9 @@ static int ebpf_process_tests(int selector, enum netdata_apps_level map_level)
     process_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 int main(int argc, char **argv)

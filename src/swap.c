@@ -26,7 +26,7 @@ static void netdata_ebpf_disable_probe(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_swap_release_task_probe, false);
 }
 
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
@@ -62,9 +62,9 @@ static int attach_kprobe(struct swap_bpf *obj)
     if (ret)
         return -1;
 
-    obj->links.netdata_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_probe,
+    obj->links.netdata_swap_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_release_task_probe,
                                                                        false, function_list[NETDATA_SWAP_RELEASE_TASK]);
-    ret = libbpf_get_error(obj->links.netdata_release_task_probe);
+    ret = libbpf_get_error(obj->links.netdata_swap_release_task_probe);
     if (ret)
         return -1;
 
@@ -148,12 +148,23 @@ int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 
     obj = swap_bpf__open();
     if (!obj) {
-        fprintf(stderr, "Cannot open or load BPF object\n");
-
-        return 2;
+        goto load_error;
     }
 
     int ret = ebpf_load_and_attach(obj, selector);
+    if (ret && selector != NETDATA_MODE_PROBE) {
+        swap_bpf__destroy(obj);
+
+        obj = swap_bpf__open();
+        if (!obj) {
+            goto load_error;
+        }
+
+        selector = NETDATA_MODE_PROBE;
+        ret = ebpf_load_and_attach(obj, selector);
+    }
+
+
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.swap_ctrl);
         ebpf_core_fill_ctrl(obj->maps.swap_ctrl, map_level);
@@ -177,6 +188,9 @@ int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
     swap_bpf__destroy(obj);
 
     return ret;
+load_error:
+    fprintf(stderr, "Cannot open or load BPF object\n");
+    return 2;
 }
 
 int main(int argc, char **argv)
