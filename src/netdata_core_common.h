@@ -101,7 +101,7 @@ static inline void ebpf_core_fill_ctrl(struct bpf_map *map, enum netdata_apps_le
     int fd = bpf_map__fd(map);
 
     unsigned int i, end = bpf_map__max_entries(map);
-    uint32_t values[NETDATA_CONTROLLER_END] = { 1, map_level};
+    uint64_t values[NETDATA_CONTROLLER_END] = { 1, map_level};
     for (i = 0; i < end; i++) {
          int ret = bpf_map_update_elem(fd, &i, &values[i], 0);
          if (ret)

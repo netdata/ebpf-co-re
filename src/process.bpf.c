@@ -28,7 +28,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
-    __type(value, __u32);
+    __type(value, __u64);
     __uint(max_entries, NETDATA_CONTROLLER_END);
 } process_ctrl SEC(".maps");
 
@@ -47,21 +47,32 @@ static __always_inline void netdata_fill_common_process_data(struct netdata_pid_
     data->pid = tgid;
 }
 
+static __always_inline int netdata_process_not_update_apps()
+{
+    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
+    if (apps && *apps)
+        return 0;
+
+    return 1;
+}
+
+
 static __always_inline int netdata_common_release_task()
 {
     struct netdata_pid_stat_t *fill;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_RELEASE_TASK, 1);
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    if (netdata_process_not_update_apps())
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         libnetdata_update_u32(&fill->release_call, 1) ;
         fill->removeme = 1;
+
+        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;
@@ -77,10 +88,8 @@ static __always_inline int netdata_common_fork_clone(int ret)
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_ERROR_PROCESS, 1);
     } 
 
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    if (netdata_process_not_update_apps())
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
@@ -95,6 +104,8 @@ static __always_inline int netdata_common_fork_clone(int ret)
             data.task_err = 1;
         } 
         bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -114,10 +125,8 @@ int netdata_tracepoint_sched_process_exit(struct netdata_sched_process_exit *ptr
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_DO_EXIT, 1);
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    if (netdata_process_not_update_apps())
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
@@ -137,10 +146,9 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     // This is necessary, because it represents the main function to start a thread
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
 
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl, &key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_DO_EXIT, 1);
+    if (netdata_process_not_update_apps())
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
@@ -151,6 +159,8 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
         data.create_process = 1;
 
         bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -173,10 +183,8 @@ int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
     }
 
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
+    if (netdata_process_not_update_apps())
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
     if (fill) {
@@ -191,6 +199,8 @@ int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr
             data.create_thread = 1;
 
         bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;

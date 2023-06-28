@@ -28,7 +28,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
-    __type(value, __u32);
+    __type(value, __u64);
     __uint(max_entries, NETDATA_CONTROLLER_END);
 } shm_ctrl SEC(".maps");
 
@@ -75,6 +75,8 @@ static __always_inline int netdata_update_apps(__u32 idx)
     } else {
         netdata_set_structure_value(&data, idx);
         bpf_map_update_elem(&tbl_pid_shm, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&shm_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -137,15 +139,13 @@ static __always_inline int netdata_release_task_shm()
     netdata_shm_t *removeme;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u32 *apps = bpf_map_lookup_elem(&shm_ctrl ,&key);
-    if (apps) {
-        if (*apps == 0)
-            return 0;
-    } else
+    if (!apps || (apps && !*apps))
         return 0;
 
     removeme = netdata_get_pid_structure(&key, &shm_ctrl, &tbl_pid_shm);
     if (removeme) {
         bpf_map_delete_elem(&tbl_pid_shm, &key);
+        libnetdata_update_global(&shm_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;

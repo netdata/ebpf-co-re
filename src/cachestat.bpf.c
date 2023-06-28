@@ -28,7 +28,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
-    __type(value, __u32);
+    __type(value, __u64);
     __uint(max_entries, NETDATA_CONTROLLER_END);
 } cstat_ctrl SEC(".maps");
 
@@ -64,6 +64,8 @@ static __always_inline int netdata_common_page_cache_lru()
     } else {
         data.add_to_page_cache_lru = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -83,6 +85,8 @@ static __always_inline int netdata_common_page_accessed()
     } else {
         data.mark_page_accessed = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -102,6 +106,8 @@ static __always_inline int netdata_common_page_dirtied()
     } else {
         data.account_page_dirtied = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -121,6 +127,8 @@ static __always_inline int netdata_common_buffer_dirty()
     } else {
         data.mark_buffer_dirty = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
     return 0;
@@ -140,6 +148,8 @@ static __always_inline int netdata_release_task_cstat()
     removeme = netdata_get_pid_structure(&key, &cstat_ctrl, &cstat_pid);
     if (removeme) {
         bpf_map_delete_elem(&cstat_pid, &key);
+
+        libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;
