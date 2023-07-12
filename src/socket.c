@@ -219,7 +219,7 @@ static inline pid_t update_global(struct socket_bpf *obj)
 
 static inline int netdata_update_bandwidth(struct socket_bpf *obj)
 {
-    netdata_bandwidth_t bandwidth = { .pid = 0, .first = 123456789, .ct = 123456790,
+    netdata_bandwidth_t bandwidth = { .first = 123456789, .ct = 123456790,
                                       .bytes_sent = 1, .bytes_received = 1, .call_tcp_sent = 1,
                                       .call_tcp_received = 1, .retransmit = 1, .call_udp_sent = 1,
                                       .call_udp_received = 1 };
@@ -228,7 +228,6 @@ static inline int netdata_update_bandwidth(struct socket_bpf *obj)
     int apps = bpf_map__fd(obj->maps.tbl_bandwidth);
     int ret = 0;
     for (my_pid = 0 ; my_pid < NETDATA_EBPF_CORE_MIN_STORE; my_pid++) {
-        bandwidth.pid = my_pid;
         int ret = bpf_map_update_elem(apps, &my_pid, &bandwidth, 0);
         if (ret) {
             fprintf(stderr, "Cannot insert value to global table.");
