@@ -154,23 +154,13 @@ static __always_inline void update_socket_table(struct inet_sock *is,
     }
 }
 
-static __always_inline int netdata_socket_not_update_apps()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&socket_ctrl ,&key);
-    if (apps && *apps)
-        return 0;
-
-    return 1;
-}
-
 static __always_inline void update_pid_connection(__u8 version)
 {
     netdata_bandwidth_t *stored;
     netdata_bandwidth_t data = { };
 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (netdata_socket_not_update_apps())
+    if (!monitor_apps(&socket_ctrl))
         return;
 
     stored = (netdata_bandwidth_t *) netdata_get_pid_structure(&key, &socket_ctrl, &tbl_bandwidth);
@@ -201,7 +191,7 @@ static __always_inline void update_pid_cleanup()
     netdata_bandwidth_t data = { };
 
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (netdata_socket_not_update_apps())
+    if (!monitor_apps(&socket_ctrl))
         return;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -269,7 +259,7 @@ static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u
 
 static __always_inline void update_pid_table(__u64 sent, __u64 received, __u8 protocol)
 {
-    if (netdata_socket_not_update_apps())
+    if (!monitor_apps(&socket_ctrl))
         return;
 
     update_pid_bandwidth((__u64)sent, received, protocol);
