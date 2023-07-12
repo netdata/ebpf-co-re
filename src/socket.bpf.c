@@ -42,15 +42,8 @@ struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __type(key, netdata_socket_idx_t);
     __type(value, netdata_socket_t);
-    __uint(max_entries, 65536);
-} tbl_conn_ipv4 SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
-    __type(key, netdata_socket_idx_t);
-    __type(value, netdata_socket_t);
-    __uint(max_entries, 65536);
-} tbl_conn_ipv6 SEC(".maps");
+    __uint(max_entries, PID_MAX_DEFAULT);
+} tbl_nd_socket SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
@@ -138,19 +131,16 @@ static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u32 retransmitted)
 {
     __u16 family;
-    void *tbl;
     netdata_socket_idx_t idx = { };
 
     family = set_idx_value(&idx, is);
     if (!family)
         return;
 
-    tbl = (family == AF_INET6)?(void *)&tbl_conn_ipv6:(void *)&tbl_conn_ipv4;
-
     netdata_socket_t *val;
     netdata_socket_t data = { };
 
-    val = (netdata_socket_t *) bpf_map_lookup_elem(tbl, &idx);
+    val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
         update_socket_stats(val, sent, received, retransmitted);
     } else {
@@ -159,7 +149,7 @@ static __always_inline void update_socket_table(struct inet_sock *is,
         data.protocol = IPPROTO_TCP;
         update_socket_stats(&data, sent, received, retransmitted);
 
-        bpf_map_update_elem(tbl, &idx, &data, BPF_ANY);
+        bpf_map_update_elem(tbl_nd_socket, &idx, &data, BPF_ANY);
     }
 }
 
@@ -423,7 +413,6 @@ static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct in
 
 static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
 {
-    void *tbl;
     netdata_socket_t *val;
     __u16 family;
     netdata_socket_idx_t idx = { };
@@ -436,10 +425,9 @@ static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
     if (!family)
         return 0;
 
-    tbl = (family == AF_INET6)?(void *)&tbl_conn_ipv6:(void *)&tbl_conn_ipv4;
-    val = (netdata_socket_t *) bpf_map_lookup_elem(tbl, &idx);
+    val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        bpf_map_delete_elem(tbl, &idx);
+        bpf_map_delete_elem(&tbl_nd_socket, &idx);
     }
 
     return 0;
