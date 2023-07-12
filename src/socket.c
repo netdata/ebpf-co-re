@@ -265,10 +265,7 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
 
     int has_error = netdata_update_bandwidth(obj);
 
-    int fd = bpf_map__fd(obj->maps.tbl_conn_ipv4);
-    has_error += update_socket_tables(fd, idx, values);
-
-    fd = bpf_map__fd(obj->maps.tbl_conn_ipv6);
+    int fd = bpf_map__fd(obj->maps.tbl_nd_socket);
     has_error += update_socket_tables(fd, idx, values);
 
     has_error += update_local_ports(obj);
@@ -311,7 +308,7 @@ static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj
     netdata_socket_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
-    int ip_fd = bpf_map__fd((ip_version == 4) ? obj->maps.tbl_conn_ipv4 : obj->maps.tbl_conn_ipv6);
+    int ip_fd = bpf_map__fd(obj->maps.tbl_nd_socket);
     if (!bpf_map_lookup_elem(ip_fd, idx, stored)) {
         int j;
         for (j = 0; j < ebpf_nprocs; j++) {
