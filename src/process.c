@@ -129,7 +129,7 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
         return -1;
     }
 
-    if (!selector)
+    if (selector != NETDATA_MODE_PROBE)
         ret = process_bpf__attach(obj);
     else
         ret = process_attach_kprobe_target(obj);
