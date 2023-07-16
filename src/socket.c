@@ -29,8 +29,6 @@ char *function_list[] = { "inet_csk_accept",
                           "tcp_v4_connect",
                           "tcp_v6_connect"};
 
-#define NETDATA_CLEANUP_FUNCTIONS "release_task"
-
 #define NETDATA_IPV4 4
 #define NETDATA_IPV6 6
 
@@ -108,12 +106,6 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
     if (ret)
         return -1;
 
-    obj->links.netdata_socket_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_socket_release_task_kprobe,
-                                                                               false, NETDATA_CLEANUP_FUNCTIONS);
-    ret = libbpf_get_error(obj->links.netdata_socket_release_task_kprobe);
-    if (ret)
-        return -1;
-
     return 0;
 }
 
@@ -131,7 +123,6 @@ static void ebpf_disable_probes(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_socket_release_task_kprobe, false);
 }
 
 static void ebpf_disable_trampoline(struct socket_bpf *obj)
@@ -148,7 +139,6 @@ static void ebpf_disable_trampoline(struct socket_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_tcp_sendmsg_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_udp_sendmsg_fexit, false);
-    bpf_program__set_autoload(obj->progs.netdata_socket_release_task_fentry, false);
 }
 
 static void ebpf_set_trampoline_target(struct socket_bpf *obj)
@@ -188,9 +178,6 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_udp_sendmsg_fexit, 0,
                                    function_list[NETDATA_FCNT_UDP_SENDMSG]);
-
-    bpf_program__set_attach_target(obj->progs.netdata_socket_release_task_fentry, 0,
-                                   NETDATA_CLEANUP_FUNCTIONS);
 }
 
 static inline int ebpf_load_and_attach(struct socket_bpf *obj, int selector)
@@ -232,7 +219,7 @@ static inline pid_t update_global(struct socket_bpf *obj)
 
 static inline int netdata_update_bandwidth(struct socket_bpf *obj)
 {
-    netdata_bandwidth_t bandwidth = { .pid = 0, .first = 123456789, .ct = 123456790,
+    netdata_bandwidth_t bandwidth = { .first = 123456789, .ct = 123456790,
                                       .bytes_sent = 1, .bytes_received = 1, .call_tcp_sent = 1,
                                       .call_tcp_received = 1, .retransmit = 1, .call_udp_sent = 1,
                                       .call_udp_received = 1 };
@@ -241,7 +228,6 @@ static inline int netdata_update_bandwidth(struct socket_bpf *obj)
     int apps = bpf_map__fd(obj->maps.tbl_bandwidth);
     int ret = 0;
     for (my_pid = 0 ; my_pid < NETDATA_EBPF_CORE_MIN_STORE; my_pid++) {
-        bandwidth.pid = my_pid;
         int ret = bpf_map_update_elem(apps, &my_pid, &bandwidth, 0);
         if (ret) {
             fprintf(stderr, "Cannot insert value to global table.");
@@ -279,10 +265,7 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
 
     int has_error = netdata_update_bandwidth(obj);
 
-    int fd = bpf_map__fd(obj->maps.tbl_conn_ipv4);
-    has_error += update_socket_tables(fd, idx, values);
-
-    fd = bpf_map__fd(obj->maps.tbl_conn_ipv6);
+    int fd = bpf_map__fd(obj->maps.tbl_nd_socket);
     has_error += update_socket_tables(fd, idx, values);
 
     has_error += update_local_ports(obj);
@@ -325,7 +308,7 @@ static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj
     netdata_socket_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
-    int ip_fd = bpf_map__fd((ip_version == 4) ? obj->maps.tbl_conn_ipv4 : obj->maps.tbl_conn_ipv6);
+    int ip_fd = bpf_map__fd(obj->maps.tbl_nd_socket);
     if (!bpf_map_lookup_elem(ip_fd, idx, stored)) {
         int j;
         for (j = 0; j < ebpf_nprocs; j++) {
