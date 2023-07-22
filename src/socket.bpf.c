@@ -147,10 +147,9 @@ static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u32 retransmitted,
                                                 __u16 protocol)
 {
-    __u16 family;
     netdata_socket_idx_t idx = { };
 
-    family = set_idx_value(&idx, is);
+    __u16 family = set_idx_value(&idx, is);
     if (family == AF_UNSPEC)
         return;
 
@@ -171,32 +170,34 @@ static __always_inline void update_socket_table(struct inet_sock *is,
     }
 }
 
-static __always_inline void update_pid_connection(__u8 version)
+static __always_inline void update_pid_connection(struct inet_sock *is)
 {
-    netdata_bandwidth_t *stored;
-    netdata_bandwidth_t data = { };
+    netdata_socket_idx_t idx = { };
 
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (!monitor_apps(&socket_ctrl))
+    netdata_socket_t *stored;
+    netdata_socket_t data = { };
+
+    __u16 family = set_idx_value(&idx, is);
+    if (family == AF_UNSPEC)
         return;
 
-    stored = (netdata_bandwidth_t *) netdata_get_pid_structure(&key, &socket_ctrl, &tbl_bandwidth);
+    stored = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (stored) {
         stored->ct = bpf_ktime_get_ns();
 
-        if (version == 4)
+        if (family == AF_INET)
             libnetdata_update_u32(&stored->ipv4_connect, 1);
         else
             libnetdata_update_u32(&stored->ipv6_connect, 1);
     } else {
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        if (version == 4)
-            data.ipv4_connect = 1;
+        if (family == AF_INET6)
+            data.tcp.ipv4_connect = 1;
         else
-            data.ipv6_connect = 1;
+            data.tcp.ipv6_connect = 1;
 
-        bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
+        bpf_map_update_elem(&tbl_nd_socket, &idx, &data, BPF_ANY);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
@@ -374,8 +375,9 @@ static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *i
     return 0;
 }
 
-static __always_inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
-                                             enum socket_counters err, __u8 version)
+static __always_inline int netdata_common_tcp_connect(struct inet_sock *is, int ret,
+                                                      enum socket_counters success,
+                                                      enum socket_counters err, __u8 version)
 {
     libnetdata_update_global(&tbl_global_sock, success, 1);
 
@@ -384,7 +386,7 @@ static __always_inline int netdata_common_tcp_connect(int ret, enum socket_count
         return 0;
     }
 
-    update_pid_connection(version);
+    update_pid_connection(is);
 
     return 0;
 }
@@ -408,7 +410,8 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
 }
 
@@ -417,7 +420,8 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 6);
 }
 
@@ -526,7 +530,8 @@ int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uad
     if (!sk)
         return 0;
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+    struct inet_sock *is = (struct inet_sock *)sk;
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
 }
 
@@ -536,7 +541,8 @@ int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uad
     if (!sk)
         return 0;
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+    struct inet_sock *is = (struct inet_sock *)sk;
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV6, 6);
 }
 
