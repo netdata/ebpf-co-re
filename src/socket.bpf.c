@@ -25,13 +25,6 @@
  ***********************************************************************************/
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
-    __type(key, __u32);
-    __type(value, netdata_bandwidth_t);
-    __uint(max_entries, PID_MAX_DEFAULT);
-} tbl_bandwidth SEC(".maps");
-
-struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
@@ -203,33 +196,6 @@ static __always_inline void update_pid_connection(struct inet_sock *is)
     }
 }
 
-static __always_inline void update_pid_cleanup()
-{
-    netdata_bandwidth_t *b;
-    netdata_bandwidth_t data = { };
-
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (!monitor_apps(&socket_ctrl))
-        return;
-
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-
-    b = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &pid);
-    if (b) {
-        libnetdata_update_u64(&b->close, 1);
-    } else {
-        data.first = bpf_ktime_get_ns();
-        data.ct = data.first;
-        data.close = 1;
-
-        bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
-
-        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
-    }
-}
-
 static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t sent, int ret)
 {
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_SENDMSG, 1);
@@ -335,8 +301,6 @@ static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
     family =  set_idx_value(&idx, is);
     if (family == AF_UNSPEC)
         return 0;
-
-    update_pid_cleanup();
 
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
