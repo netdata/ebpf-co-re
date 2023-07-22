@@ -253,25 +253,28 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
     return my_pid;
 }
 
-static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj, int ebpf_nprocs, int ip_version)
+static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj, int ebpf_nprocs)
 {
     netdata_socket_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
-    int ip_fd = bpf_map__fd(obj->maps.tbl_nd_socket);
-    if (!bpf_map_lookup_elem(ip_fd, idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].tcp.tcp_bytes_sent + stored[j].tcp.tcp_bytes_received + stored[j].udp.udp_bytes_sent + stored[j].udp.udp_bytes_received +
-                        stored[j].first + stored[j].ct + stored[j].tcp.retransmit);
+    int fd = bpf_map__fd(obj->maps.tbl_nd_socket);
+    netdata_socket_idx_t key =  { };
+    netdata_socket_idx_t next_key = { };
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, idx, stored)) {
+            counter++;
         }
+
+        key = next_key;
     }
 
     if (counter) {
+        fprintf(stdout, "Socket data stored with success. It collected %lu sockets\n", counter);
         return 0;
     }
 
-    fprintf(stdout, "Cannot read IP%d socket data.\n", ip_version);
+    fprintf(stdout, "Cannot read socket data.\n");
 
     return 2;
 }
@@ -333,8 +336,7 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SOCKET_COUNTER);
         if (!ret) {
 
-            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs, NETDATA_IPV4);
-            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs, NETDATA_IPV6);
+            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs);
 
             ret += netdata_read_local_ports(obj);
 
