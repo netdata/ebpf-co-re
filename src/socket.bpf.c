@@ -179,9 +179,9 @@ static __always_inline void update_pid_connection(struct inet_sock *is)
         stored->ct = bpf_ktime_get_ns();
 
         if (family == AF_INET)
-            libnetdata_update_u32(&stored->ipv4_connect, 1);
+            libnetdata_update_u32(&stored->tcp.ipv4_connect, 1);
         else
-            libnetdata_update_u32(&stored->ipv6_connect, 1);
+            libnetdata_update_u32(&stored->tcp.ipv6_connect, 1);
     } else {
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
