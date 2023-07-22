@@ -262,8 +262,8 @@ static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj
     if (!bpf_map_lookup_elem(ip_fd, idx, stored)) {
         int j;
         for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].recv_packets + stored[j].sent_packets + stored[j].recv_bytes + stored[j].sent_bytes +
-                        stored[j].first + stored[j].ct + stored[j].retransmit);
+            counter += (stored[j].tcp.tcp_bytes_sent + stored[j].tcp.tcp_bytes_received + stored[j].udp.udp_bytes_sent + stored[j].udp.udp_bytes_received +
+                        stored[j].first + stored[j].ct + stored[j].tcp.retransmit);
         }
     }
 
@@ -320,11 +320,11 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         int fd = bpf_map__fd(obj->maps.socket_ctrl);
         ebpf_core_fill_ctrl(obj->maps.socket_ctrl, map_level);
 
-        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1 };
-        netdata_socket_t values = { .recv_packets = 1, .sent_packets = 1, .recv_bytes = 1, .sent_bytes = 1,
-                                    .first = 123456789, .ct = 123456790, .retransmit = 1, .protocol = 6,
-                                    .reserved = 1 }; 
-        pid_t my_pid = ebpf_update_tables(obj, &common_idx, &values);
+        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1, .pid = 1 };
+        netdata_socket_t values = { .tcp.call_tcp_sent = 1, .tcp.call_tcp_received = 1, .tcp.tcp_bytes_sent = 1, .tcp.tcp_bytes_received = 1,
+                                    .udp.udp_bytes_sent = 1, .udp.udp_bytes_received = 1,
+                                    .first = 123456789, .ct = 123456790, .tcp.retransmit = 1, .protocol = 6}; 
+        ebpf_update_tables(obj, &common_idx, &values);
 
         sleep(60);
 
