@@ -103,6 +103,8 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     nsi->dport = bpf_ntohs(nsi->dport);
     nsi->sport = bpf_ntohs(nsi->sport);
 
+    nsi->pid =  netdata_get_current_pid();
+
     return family;
 }
 
