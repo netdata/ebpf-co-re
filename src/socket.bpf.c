@@ -420,6 +420,8 @@ static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *i
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
+    update_socket_table(is, 0, received, 0, IPPROTO_UDP);
+
     update_pid_table(0, received, IPPROTO_UDP);
 
     return 0;
