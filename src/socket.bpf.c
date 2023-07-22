@@ -117,16 +117,26 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
     ptr->ct = bpf_ktime_get_ns();
 
     if (sent) {
-        libnetdata_update_u64(&ptr->sent_packets, 1);
-        libnetdata_update_u64(&ptr->sent_bytes, sent);
+        if (protocol == IPPROTO_TCP) {
+            libnetdata_update_u32(&ptr->tcp.call_tcp_sent, 1);
+            libnetdata_update_u64(&ptr->tcp.tcp_bytes_sent, sent);
+
+            libnetdata_update_u32(&ptr->tcp.retransmit, retransmitted);
+        } else {
+            libnetdata_update_u32(&ptr->udp.call_udp_sent, 1);
+            libnetdata_update_u64(&ptr->udp.udp_bytes_sent, sent);
+        }
     }
 
     if (received) {
-        libnetdata_update_u64(&ptr->recv_packets, 1);
-        libnetdata_update_u64(&ptr->recv_bytes, received);
+        if (protocol == IPPROTO_TCP) {
+            libnetdata_update_u32(&ptr->tcp.call_tcp_received, 1);
+            libnetdata_update_u64(&ptr->tcp.tcp_bytes_received, received);
+        } else {
+            libnetdata_update_u32(&ptr->udp.call_udp_received, 1);
+            libnetdata_update_u64(&ptr->udp.udp_bytes_received, received);
+        }
     }
-
-    libnetdata_update_u32(&ptr->retransmit, retransmitted);
 }
 
 // Use __always_inline instead inline to keep compatiblity with old kernels
@@ -390,7 +400,7 @@ static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
 
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        bpf_map_delete_elem(&tbl_nd_socket, &idx);
+        libnetdata_update_u32(&val->tcp.close, 1);
     }
 
     return 0;
