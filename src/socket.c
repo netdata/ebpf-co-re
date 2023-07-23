@@ -217,27 +217,6 @@ static inline pid_t update_global(struct socket_bpf *obj)
     return ebpf_fill_global(fd);
 }
 
-static inline int netdata_update_bandwidth(struct socket_bpf *obj)
-{
-    netdata_bandwidth_t bandwidth = { .first = 123456789, .ct = 123456790,
-                                      .bytes_sent = 1, .bytes_received = 1, .call_tcp_sent = 1,
-                                      .call_tcp_received = 1, .retransmit = 1, .call_udp_sent = 1,
-                                      .call_udp_received = 1 };
-
-    uint32_t my_pid;
-    int apps = bpf_map__fd(obj->maps.tbl_bandwidth);
-    int ret = 0;
-    for (my_pid = 0 ; my_pid < NETDATA_EBPF_CORE_MIN_STORE; my_pid++) {
-        int ret = bpf_map_update_elem(apps, &my_pid, &bandwidth, 0);
-        if (ret) {
-            fprintf(stderr, "Cannot insert value to global table.");
-            break;
-        }
-    }
-
-    return ret;
-}
-
 static inline int update_socket_tables(int fd, netdata_socket_idx_t *idx, netdata_socket_t *values)
 {
     int ret = bpf_map_update_elem(fd, idx, values, 0);
@@ -263,10 +242,8 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
 {
     pid_t my_pid = update_global(obj);
 
-    int has_error = netdata_update_bandwidth(obj);
-
     int fd = bpf_map__fd(obj->maps.tbl_nd_socket);
-    has_error += update_socket_tables(fd, idx, values);
+    int has_error = update_socket_tables(fd, idx, values);
 
     has_error += update_local_ports(obj);
 
@@ -276,52 +253,28 @@ pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netd
     return my_pid;
 }
 
-static int netdata_read_bandwidth(pid_t pid, struct socket_bpf *obj, int ebpf_nprocs)
+static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj, int ebpf_nprocs)
 {
-    netdata_bandwidth_t stored[ebpf_nprocs];
+    netdata_socket_t stored[ebpf_nprocs];
 
     uint64_t counter = 0;
-    int key, next_key;
-    key = next_key = 0;
-    int fd = bpf_map__fd(obj->maps.tbl_bandwidth);
+    int fd = bpf_map__fd(obj->maps.tbl_nd_socket);
+    netdata_socket_idx_t key =  { };
+    netdata_socket_idx_t next_key = { };
     while (!bpf_map_get_next_key(fd, &key, &next_key)) {
-        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+        if (!bpf_map_lookup_elem(fd, idx, stored)) {
             counter++;
         }
-        memset(stored, 0, ebpf_nprocs * sizeof(netdata_bandwidth_t));
 
         key = next_key;
     }
 
     if (counter) {
-        fprintf(stdout, "Apps data stored with success. It collected %lu pids\n", counter);
+        fprintf(stdout, "Socket data stored with success. It collected %lu sockets\n", counter);
         return 0;
     }
 
-    fprintf(stdout, "Empty apps table\n");
-
-    return 2;
-}
-
-static int netdata_read_socket(netdata_socket_idx_t *idx, struct socket_bpf *obj, int ebpf_nprocs, int ip_version)
-{
-    netdata_socket_t stored[ebpf_nprocs];
-
-    uint64_t counter = 0;
-    int ip_fd = bpf_map__fd(obj->maps.tbl_nd_socket);
-    if (!bpf_map_lookup_elem(ip_fd, idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += (stored[j].recv_packets + stored[j].sent_packets + stored[j].recv_bytes + stored[j].sent_bytes +
-                        stored[j].first + stored[j].ct + stored[j].retransmit);
-        }
-    }
-
-    if (counter) {
-        return 0;
-    }
-
-    fprintf(stdout, "Cannot read IP%d socket data.\n", ip_version);
+    fprintf(stdout, "Cannot read socket data.\n");
 
     return 2;
 }
@@ -370,11 +323,11 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         int fd = bpf_map__fd(obj->maps.socket_ctrl);
         ebpf_core_fill_ctrl(obj->maps.socket_ctrl, map_level);
 
-        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1 };
-        netdata_socket_t values = { .recv_packets = 1, .sent_packets = 1, .recv_bytes = 1, .sent_bytes = 1,
-                                    .first = 123456789, .ct = 123456790, .retransmit = 1, .protocol = 6,
-                                    .reserved = 1 }; 
-        pid_t my_pid = ebpf_update_tables(obj, &common_idx, &values);
+        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1, .pid = 1 };
+        netdata_socket_t values = { .tcp.call_tcp_sent = 1, .tcp.call_tcp_received = 1, .tcp.tcp_bytes_sent = 1, .tcp.tcp_bytes_received = 1,
+                                    .udp.udp_bytes_sent = 1, .udp.udp_bytes_received = 1,
+                                    .first = 123456789, .ct = 123456790, .tcp.retransmit = 1, .protocol = 6}; 
+        ebpf_update_tables(obj, &common_idx, &values);
 
         sleep(60);
 
@@ -383,10 +336,7 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         ret =  ebpf_read_global_array(fd, ebpf_nprocs, NETDATA_SOCKET_COUNTER);
         if (!ret) {
 
-            ret += netdata_read_bandwidth(my_pid, obj, ebpf_nprocs);
-
-            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs, NETDATA_IPV4);
-            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs, NETDATA_IPV6);
+            ret += netdata_read_socket(&common_idx, obj, ebpf_nprocs);
 
             ret += netdata_read_local_ports(obj);
 

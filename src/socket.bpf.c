@@ -25,13 +25,6 @@
  ***********************************************************************************/
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
-    __type(key, __u32);
-    __type(value, netdata_bandwidth_t);
-    __uint(max_entries, PID_MAX_DEFAULT);
-} tbl_bandwidth SEC(".maps");
-
-struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
@@ -103,24 +96,40 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     nsi->dport = bpf_ntohs(nsi->dport);
     nsi->sport = bpf_ntohs(nsi->sport);
 
+    nsi->pid =  netdata_get_current_pid();
+
     return family;
 }
 
-static __always_inline void update_socket_stats(netdata_socket_t *ptr, __u64 sent, __u64 received, __u32 retransmitted)
+static __always_inline void update_socket_stats(netdata_socket_t *ptr,
+                                                __u64 sent,
+                                                __u64 received,
+                                                __u32 retransmitted,
+                                                __u16 protocol)
 {
     ptr->ct = bpf_ktime_get_ns();
 
     if (sent) {
-        libnetdata_update_u64(&ptr->sent_packets, 1);
-        libnetdata_update_u64(&ptr->sent_bytes, sent);
+        if (protocol == IPPROTO_TCP) {
+            libnetdata_update_u32(&ptr->tcp.call_tcp_sent, 1);
+            libnetdata_update_u64(&ptr->tcp.tcp_bytes_sent, sent);
+
+            libnetdata_update_u32(&ptr->tcp.retransmit, retransmitted);
+        } else {
+            libnetdata_update_u32(&ptr->udp.call_udp_sent, 1);
+            libnetdata_update_u64(&ptr->udp.udp_bytes_sent, sent);
+        }
     }
 
     if (received) {
-        libnetdata_update_u64(&ptr->recv_packets, 1);
-        libnetdata_update_u64(&ptr->recv_bytes, received);
+        if (protocol == IPPROTO_TCP) {
+            libnetdata_update_u32(&ptr->tcp.call_tcp_received, 1);
+            libnetdata_update_u64(&ptr->tcp.tcp_bytes_received, received);
+        } else {
+            libnetdata_update_u32(&ptr->udp.call_udp_received, 1);
+            libnetdata_update_u64(&ptr->udp.udp_bytes_received, received);
+        }
     }
-
-    libnetdata_update_u32(&ptr->retransmit, retransmitted);
 }
 
 // Use __always_inline instead inline to keep compatiblity with old kernels
@@ -128,12 +137,12 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr, __u64 sen
 static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u64 sent,
                                                 __u64 received,
-                                                __u32 retransmitted)
+                                                __u32 retransmitted,
+                                                __u16 protocol)
 {
-    __u16 family;
     netdata_socket_idx_t idx = { };
 
-    family = set_idx_value(&idx, is);
+    __u16 family = set_idx_value(&idx, is);
     if (family == AF_UNSPEC)
         return;
 
@@ -142,127 +151,54 @@ static __always_inline void update_socket_table(struct inet_sock *is,
 
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        update_socket_stats(val, sent, received, retransmitted);
+        update_socket_stats(val, sent, received, retransmitted, protocol);
     } else {
         // This will be present while we do not have network viewer.
         data.first = bpf_ktime_get_ns();
-        data.protocol = IPPROTO_TCP;
+        data.ct = data.first;
+        data.protocol = protocol;
         data.family = family;
-        update_socket_stats(&data, sent, received, retransmitted);
+        update_socket_stats(&data, sent, received, retransmitted, protocol);
+
+        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
         bpf_map_update_elem(&tbl_nd_socket, &idx, &data, BPF_ANY);
     }
 }
 
-static __always_inline void update_pid_connection(__u8 version)
+static __always_inline void update_pid_connection(struct inet_sock *is)
 {
-    netdata_bandwidth_t *stored;
-    netdata_bandwidth_t data = { };
+    netdata_socket_idx_t idx = { };
 
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (!monitor_apps(&socket_ctrl))
+    netdata_socket_t *stored;
+    netdata_socket_t data = { };
+
+    __u16 family = set_idx_value(&idx, is);
+    if (family == AF_UNSPEC)
         return;
 
-    stored = (netdata_bandwidth_t *) netdata_get_pid_structure(&key, &socket_ctrl, &tbl_bandwidth);
+    stored = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (stored) {
         stored->ct = bpf_ktime_get_ns();
 
-        if (version == 4)
-            libnetdata_update_u32(&stored->ipv4_connect, 1);
+        if (family == AF_INET)
+            libnetdata_update_u32(&stored->tcp.ipv4_connect, 1);
         else
-            libnetdata_update_u32(&stored->ipv6_connect, 1);
+            libnetdata_update_u32(&stored->tcp.ipv6_connect, 1);
     } else {
         data.first = bpf_ktime_get_ns();
         data.ct = data.first;
-        if (version == 4)
-            data.ipv4_connect = 1;
+        data.protocol = IPPROTO_TCP;
+        data.family = family;
+        if (family == AF_INET6)
+            data.tcp.ipv4_connect = 1;
         else
-            data.ipv6_connect = 1;
+            data.tcp.ipv6_connect = 1;
 
-        bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
-
-        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
-    }
-}
-
-static __always_inline void update_pid_cleanup()
-{
-    netdata_bandwidth_t *b;
-    netdata_bandwidth_t data = { };
-
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    if (!monitor_apps(&socket_ctrl))
-        return;
-
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-
-    b = (netdata_bandwidth_t *) bpf_map_lookup_elem(&tbl_bandwidth, &pid);
-    if (b) {
-        libnetdata_update_u64(&b->close, 1);
-    } else {
-        data.first = bpf_ktime_get_ns();
-        data.ct = data.first;
-        data.close = 1;
-
-        bpf_map_update_elem(&tbl_bandwidth, &pid, &data, BPF_ANY);
+        bpf_map_update_elem(&tbl_nd_socket, &idx, &data, BPF_ANY);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
-}
-
-static __always_inline void update_pid_bandwidth(__u64 sent, __u64 received, __u8 protocol)
-{
-    netdata_bandwidth_t *b;
-    netdata_bandwidth_t data = { };
-
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    b = (netdata_bandwidth_t *) netdata_get_pid_structure(&key, &socket_ctrl, &tbl_bandwidth);
-    if (b) {
-        b->ct = bpf_ktime_get_ns();
-
-        if (sent) {
-            libnetdata_update_u64(&b->bytes_sent, sent);
-
-            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_sent : &b->call_udp_sent, 1);
-        } else if (received) {
-            libnetdata_update_u64(&b->bytes_received, received);
-
-            libnetdata_update_u64((protocol == IPPROTO_TCP) ? &b->call_tcp_received : &b->call_udp_received, 1);
-        } else
-            libnetdata_update_u64(&b->retransmit, 1);
-    } else {
-        data.first = bpf_ktime_get_ns();
-        data.ct = data.first;
-        if (sent) {
-            data.bytes_sent = sent;
-            if (protocol == IPPROTO_TCP)
-                data.call_tcp_sent = 1;
-            else
-                data.call_udp_sent = 1;
-        } else if (received) {
-            data.bytes_received = received;
-            if (protocol == IPPROTO_TCP)
-                data.call_tcp_received = 1;
-            else
-                data.call_udp_received = 1;
-        } else {
-            data.retransmit = 1;
-        }
-
-        bpf_map_update_elem(&tbl_bandwidth, &key, &data, BPF_ANY);
-
-        libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
-    }
-}
-
-static __always_inline void update_pid_table(__u64 sent, __u64 received, __u8 protocol)
-{
-    if (!monitor_apps(&socket_ctrl))
-        return;
-
-    update_pid_bandwidth((__u64)sent, received, protocol);
 }
 
 static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t sent, int ret)
@@ -274,10 +210,8 @@ static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0);
+    update_socket_table(is, sent, 0, 0, IPPROTO_TCP);
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_SENDMSG, sent);
-
-    update_pid_table((__u64)sent, 0, IPPROTO_TCP);
 
     return 0;
 }
@@ -291,11 +225,9 @@ static __always_inline int common_udp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0);
+    update_socket_table(is, sent, 0, 0, IPPROTO_UDP);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_SENDMSG, (__u64) sent);
-
-    update_pid_table((__u64)sent, 0, IPPROTO_UDP);
 
     return 0;
 }
@@ -342,9 +274,7 @@ static __always_inline int netdata_common_tcp_retransmit(struct inet_sock *is)
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_RETRANSMIT, 1);
 
-    update_socket_table(is, 0, 0, 1);
-
-    update_pid_table(0, 0, IPPROTO_TCP);
+    update_socket_table(is, 0, 0, 1, IPPROTO_TCP);
 
     return 0;
 }
@@ -358,11 +288,9 @@ static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct in
         return 0;
     }
 
-    update_socket_table(is, 0, (__u64)copied, 1);
+    update_socket_table(is, 0, (__u64)copied, 1, IPPROTO_TCP);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_CLEANUP_RBUF, received);
-
-    update_pid_table(0, received, IPPROTO_TCP);
 
     return 0;
 }
@@ -379,11 +307,9 @@ static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
     if (family == AF_UNSPEC)
         return 0;
 
-    update_pid_cleanup();
-
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        bpf_map_delete_elem(&tbl_nd_socket, &idx);
+        libnetdata_update_u32(&val->tcp.close, 1);
     }
 
     return 0;
@@ -413,13 +339,14 @@ static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *i
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
-    update_pid_table(0, received, IPPROTO_UDP);
+    update_socket_table(is, 0, received, 0, IPPROTO_UDP);
 
     return 0;
 }
 
-static __always_inline int netdata_common_tcp_connect(int ret, enum socket_counters success,
-                                             enum socket_counters err, __u8 version)
+static __always_inline int netdata_common_tcp_connect(struct inet_sock *is, int ret,
+                                                      enum socket_counters success,
+                                                      enum socket_counters err)
 {
     libnetdata_update_global(&tbl_global_sock, success, 1);
 
@@ -428,7 +355,7 @@ static __always_inline int netdata_common_tcp_connect(int ret, enum socket_count
         return 0;
     }
 
-    update_pid_connection(version);
+    update_pid_connection(is);
 
     return 0;
 }
@@ -452,8 +379,9 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
-                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
 }
 
 SEC("kretprobe/tcp_v6_connect")
@@ -461,8 +389,9 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
-                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 6);
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
 }
 
 SEC("kprobe/tcp_retransmit_skb")
@@ -570,8 +499,9 @@ int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uad
     if (!sk)
         return 0;
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
-                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4, 4);
+    struct inet_sock *is = (struct inet_sock *)sk;
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
 }
 
 SEC("fexit/tcp_v6_connect")
@@ -580,8 +510,9 @@ int BPF_PROG(netdata_tcp_v6_connect_fexit, struct sock *sk, struct sockaddr *uad
     if (!sk)
         return 0;
 
-    return netdata_common_tcp_connect(ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
-                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV6, 6);
+    struct inet_sock *is = (struct inet_sock *)sk;
+    return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
+                                      NETDATA_KEY_ERROR_TCP_CONNECT_IPV6);
 }
 
 SEC("fentry/tcp_retransmit_skb")
