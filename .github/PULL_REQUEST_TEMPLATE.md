@@ -13,6 +13,18 @@ helpful if there is no related issue.
 ##### Summary
 
 ##### Test Plan
+1. Clone this branch
+2. Run the following commands:
+```sh
+# git submodule update --init --recursive
+# make clean; make
+# cd src/tests
+# sh run_tests.sh
+```
+3. Verify that you do not have any `libbpf` error inside `error.log`.
 
 ##### Additional information
 
+| Linux Distribution |   Environment  |Kernel Version |    Error    | Success |
+|--------------------|----------------|---------------|-------------|---------|
+| LINUX DISTRIBUION  | Bare metal/VM  | uname -r      |             |         |
