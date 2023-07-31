@@ -121,7 +121,7 @@ static inline void ebpf_core_fill_ctrl(struct bpf_map *map, enum netdata_apps_le
  */
 static inline enum netdata_apps_level ebpf_check_map_level(int value)
 {
-    if (value < NETDATA_APPS_LEVEL_REAL_PARENT || value > )NETDATA_APPS_LEVEL_IGNORE {
+    if (value < NETDATA_APPS_LEVEL_REAL_PARENT || value > NETDATA_APPS_LEVEL_IGNORE) {
         fprintf(stderr, "\"Error\" : \"Value given (%d) is not valid, resetting to default 0 (Real Parent).\",\n",
                 value);
         value = NETDATA_APPS_LEVEL_REAL_PARENT;
