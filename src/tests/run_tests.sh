@@ -10,9 +10,9 @@ for i in "${three_tests[@]}" ; do
     {
         pid=$("./$i" --help | grep pid)
         if [ -z "${pid}" ]; then
-    	    end_loop=0
+            end_loop=0
         else
-    	    end_loop=2
+            end_loop=3
         fi
 
         for j in $(seq 0 $end_loop); do
@@ -51,4 +51,4 @@ done
 
 echo "We are not running filesystem or mdflush, because they can generate error, please run them."
 
-ls -lh error.log success.log
+ls -lh ./*.log
