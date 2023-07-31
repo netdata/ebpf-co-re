@@ -121,7 +121,7 @@ static inline void ebpf_core_fill_ctrl(struct bpf_map *map, enum netdata_apps_le
  */
 static inline enum netdata_apps_level ebpf_check_map_level(int value)
 {
-    if (value < NETDATA_APPS_LEVEL_REAL_PARENT || value > NETDATA_APPS_LEVEL_ALL) {
+    if (value < NETDATA_APPS_LEVEL_REAL_PARENT || value > )NETDATA_APPS_LEVEL_IGNORE {
         fprintf(stderr, "\"Error\" : \"Value given (%d) is not valid, resetting to default 0 (Real Parent).\",\n",
                 value);
         value = NETDATA_APPS_LEVEL_REAL_PARENT;
@@ -142,7 +142,7 @@ static inline void ebpf_core_print_help(char *name, char *info, int has_trampoli
                         " probes will be used.\n");
     if (has_integration)
         fprintf(stdout, "--pid        : Store PID according argument given. Values can be:\n"
-                        "\t\t0 - Real parents\n\t\t1 - Parents\n\t\t2 - All pids\n");
+                        "\t\t0 - Real parents\n\t\t1 - Parents\n\t\t2 - All PIDs\n\t\t3 - Ignore PIDs\n");
 }
 
 /**
