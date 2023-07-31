@@ -51,4 +51,4 @@ done
 
 echo "We are not running filesystem or mdflush, because they can generate error, please run them."
 
-ls -lh *.log
+ls -lh ./*.log
