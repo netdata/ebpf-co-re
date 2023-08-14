@@ -99,8 +99,8 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     BPF_CORE_READ_INTO(&nsi->dport, is, sk.__sk_common.skc_dport);
     BPF_CORE_READ_INTO(&nsi->sport, is, sk.__sk_common.skc_num);
 
-    nsi->dport = bpf_ntohs(nsi->dport);
-    nsi->sport = bpf_ntohs(nsi->sport);
+    nsi->dport = nsi->dport;
+    nsi->sport = nsi->sport;
 
     // Socket for nowhere or system looking for port
     // This can be an attack vector that needs to be addressed in another opportunity
