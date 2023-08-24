@@ -97,14 +97,15 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
 
     //Read ports
     BPF_CORE_READ_INTO(&nsi->dport, is, sk.__sk_common.skc_dport);
-    BPF_CORE_READ_INTO(&nsi->sport, is, sk.__sk_common.skc_num);
+    //BPF_CORE_READ_INTO(&nsi->sport, is, sk.__sk_common.skc_num);
 
     nsi->dport = nsi->dport;
-    nsi->sport = nsi->sport;
+   // nsi->sport = nsi->sport;
 
     // Socket for nowhere or system looking for port
     // This can be an attack vector that needs to be addressed in another opportunity
-    if (nsi->sport == 0 || nsi->dport == 0)
+    // if (nsi->sport == 0 || nsi->dport == 0)
+    if (nsi->dport == 0)
         return AF_UNSPEC;
 
     nsi->pid = netdata_get_pid(&socket_ctrl);
