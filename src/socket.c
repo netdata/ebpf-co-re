@@ -323,7 +323,8 @@ int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
         int fd = bpf_map__fd(obj->maps.socket_ctrl);
         ebpf_core_fill_ctrl(obj->maps.socket_ctrl, map_level);
 
-        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1, .pid = 1 };
+        //netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .sport = 1, .daddr.addr64 = {1 , 1}, .dport = 1, .pid = 1 };
+        netdata_socket_idx_t common_idx = { .saddr.addr64 = { 1, 1 }, .daddr.addr64 = {1 , 1}, .dport = 1, .pid = 1 };
         netdata_socket_t values = { .tcp.call_tcp_sent = 1, .tcp.call_tcp_received = 1, .tcp.tcp_bytes_sent = 1, .tcp.tcp_bytes_received = 1,
                                     .udp.udp_bytes_sent = 1, .udp.udp_bytes_received = 1,
                                     .first = 123456789, .ct = 123456790, .tcp.retransmit = 1, .protocol = 6}; 
