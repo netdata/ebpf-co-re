@@ -72,7 +72,8 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     BPF_CORE_READ_INTO(&family, is, sk.__sk_common.skc_family);
     // Read source and destination IPs
     if ( family == AF_INET ) { //AF_INET
-        BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, sk.__sk_common.skc_rcv_saddr );
+        //BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, sk.__sk_common.skc_rcv_saddr ); //bind to local address
+        BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, inet_saddr );
         BPF_CORE_READ_INTO(&nsi->daddr.addr32[0], is, sk.__sk_common.skc_daddr );
 
         if ((nsi->saddr.addr32[0] == 0 || nsi->daddr.addr32[0] == 0) || // Zero addr
