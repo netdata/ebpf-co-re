@@ -72,7 +72,8 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     BPF_CORE_READ_INTO(&family, is, sk.__sk_common.skc_family);
     // Read source and destination IPs
     if ( family == AF_INET ) { //AF_INET
-        BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, sk.__sk_common.skc_rcv_saddr );
+        //BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, sk.__sk_common.skc_rcv_saddr ); //bind to local address
+        BPF_CORE_READ_INTO(&nsi->saddr.addr32[0], is, inet_saddr );
         BPF_CORE_READ_INTO(&nsi->daddr.addr32[0], is, sk.__sk_common.skc_daddr );
 
         if ((nsi->saddr.addr32[0] == 0 || nsi->daddr.addr32[0] == 0) || // Zero addr
@@ -276,6 +277,28 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
         bpf_map_update_elem(&tbl_lports, &idx, &data, BPF_ANY);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
+    }
+
+    struct inet_sock *is = (struct inet_sock *)sk;
+    netdata_socket_idx_t nv_idx = { };
+    __u16 family = set_idx_value(&nv_idx, is);
+    if (family == AF_UNSPEC)
+        return 0;
+
+    netdata_socket_t *val;
+    netdata_socket_t nv_data = { };
+
+    val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &nv_idx);
+    if (val) {
+        libnetdata_update_u32(&val->external_origin, 1);
+    } else {
+        nv_data.first = bpf_ktime_get_ns();
+        nv_data.ct = nv_data.first;
+        nv_data.protocol = protocol;
+        nv_data.family = family;
+        nv_data.external_origin = 1;
+
+        bpf_map_update_elem(&tbl_nd_socket, &nv_idx, &nv_data, BPF_ANY);
     }
 
     return 0;
