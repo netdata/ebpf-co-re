@@ -279,7 +279,7 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
-    struct inet_sock *is = inet_sk(sk);
+    struct inet_sock *is = (struct inet_sock *)sk;
     netdata_socket_idx_t nv_idx = { };
     __u16 family = set_idx_value(&nv_idx, is);
     if (family == AF_UNSPEC)
