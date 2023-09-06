@@ -519,8 +519,8 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
  *
  ***********************************************************************************/
 
-SEC("fentry/inet_csk_accept")
-int BPF_PROG(netdata_inet_csk_accept_fentry, struct sock *sk)
+SEC("fexit/inet_csk_accept")
+int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
 {
     if (!sk)
         return 0;
