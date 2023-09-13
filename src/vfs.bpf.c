@@ -40,11 +40,8 @@ struct {
 
 static __always_inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat_t *data)
 {
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-
-    data->pid_tgid = pid_tgid;
-    data->pid = tgid;
+    data->ct = bpf_ktime_get_ns();
+    bpf_get_current_comm(&data->name, TASK_COMM_LEN);
 }
 
 static __always_inline int netdata_vfs_not_update_apps()

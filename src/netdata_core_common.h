@@ -9,6 +9,10 @@
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 
+#ifndef TASK_COMM_LEN
+#define TASK_COMM_LEN 16
+#endif
+
 enum NETDATA_EBPF_CORE_IDX {
     NETDATA_EBPF_CORE_IDX_HELP,
     NETDATA_EBPF_CORE_IDX_PROBE,

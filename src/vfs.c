@@ -298,7 +298,7 @@ static pid_t ebpf_update_tables(int global, int apps)
 {
     pid_t pid = ebpf_fill_global(global);
 
-    struct netdata_vfs_stat_t stats = { .pid_tgid = (__u64)pid, .pid = pid, .pad = 0, .write_call = 1,
+    struct netdata_vfs_stat_t stats = { .ct = 0, .name = "vfs", .write_call = 1,
                                         .writev_call = 1, .read_call = 1, .readv_call = 1, .unlink_call = 1,
                                         .fsync_call = 1, .open_call = 1, .create_call = 1, .write_bytes = 1,
                                         .writev_bytes = 1, .readv_bytes = 1, .read_bytes = 1, .write_err = 1,
