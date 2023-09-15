@@ -22,8 +22,7 @@ char *function_list[] = { "vfs_write",
                           "vfs_unlink",
                           "vfs_fsync",
                           "vfs_open",
-                          "vfs_create",
-                          "release_task"
+                          "vfs_create"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_VFS_RELEASE_TASK 8
@@ -46,7 +45,6 @@ static inline void ebpf_disable_probes(struct vfs_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_kretprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_vfs_release_task_kprobe, false);
 }
 
 static inline void ebpf_disable_trampoline(struct vfs_bpf *obj)
@@ -66,7 +64,6 @@ static inline void ebpf_disable_trampoline(struct vfs_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_open_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata_vfs_create_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_vfs_release_task_fentry, false);
 //    bpf_program__set_autoload(obj->progs.netdata_vfs_create_fexit, false);
 }
 
@@ -116,9 +113,6 @@ static void ebpf_set_trampoline_target(struct vfs_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_vfs_create_fentry, 0,
                                    function_list[NETDATA_VFS_CREATE]);
-
-    bpf_program__set_attach_target(obj->progs.netdata_vfs_release_task_fentry, 0,
-                                   function_list[NETDATA_VFS_RELEASE_TASK]);
 
 //    bpf_program__set_attach_target(obj->progs.netdata_vfs_create_fexit, 0,
 //                                   function_list[NETDATA_VFS_CREATE]);
@@ -230,11 +224,6 @@ static int ebpf_attach_probes(struct vfs_bpf *obj)
     if (ret)
         return -1;
  
-    obj->links.netdata_vfs_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_vfs_release_task_kprobe,
-                                                                           true, function_list[NETDATA_VFS_RELEASE_TASK]);
-    ret = libbpf_get_error(obj->links.netdata_vfs_release_task_kprobe);
-    if (ret)
-        return -1;
     return 0;
 }
 
