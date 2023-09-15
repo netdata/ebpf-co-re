@@ -370,23 +370,6 @@ static __always_inline int netdata_common_vfs_create(int ret)
     return 0;
 }
 
-static __always_inline int netdata_release_task_vfs()
-{
-    struct netdata_vfs_stat_t *removeme;
-    __u32 key = 0;
-    if (netdata_vfs_not_update_apps())
-        return 0;
-
-    removeme = netdata_get_pid_structure(&key, &vfs_ctrl, &tbl_vfs_pid);
-    if (removeme) {
-        bpf_map_delete_elem(&tbl_vfs_pid, &key);
-
-        libnetdata_update_global(&vfs_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
-    }
-
-    return 0;
-}
-
 /************************************************************************************
  *     
  *                            VFS Section (kprobe)
@@ -527,12 +510,6 @@ int BPF_KRETPROBE(netdata_vfs_create_kretprobe)
     int ret = (int)PT_REGS_RC(ctx);
 
     return netdata_common_vfs_create(ret);
-}
-
-SEC("kprobe/release_task")
-int BPF_KRETPROBE(netdata_vfs_release_task_kprobe)
-{
-    return netdata_release_task_vfs();
 }
 
 /************************************************************************************
@@ -682,12 +659,6 @@ int BPF_PROG(netdata_vfs_create_fexit, struct inode *dir, struct dentry *dentry,
     return netdata_common_vfs_create(ret);
 }
 */
-
-SEC("fentry/release_task")
-int BPF_PROG(netdata_vfs_release_task_fentry)
-{
-    return netdata_release_task_vfs();
-}
 
 char _license[] SEC("license") = "GPL";
 
