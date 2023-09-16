@@ -40,8 +40,7 @@ static ebpf_specify_name_t cachestat_names[] = { {.program_name = "netdata_folio
 char *cachestat_fcnt[] = { "add_to_page_cache_lru",
                      "mark_page_accessed",
                      NULL, // Filled after to discover available functions
-                     "mark_buffer_dirty",
-                     "release_task"
+                     "mark_buffer_dirty"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_CACHESTAT_RELEASE_TASK 4
@@ -54,7 +53,6 @@ static inline void netdata_ebpf_disable_probe(struct cachestat_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_mark_buffer_dirty_kprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_kprobe, false);
 }
 
 static inline void netdata_ebpf_disable_specific_probe(struct cachestat_bpf *obj)
@@ -79,7 +77,6 @@ static inline void netdata_ebpf_disable_trampoline(struct cachestat_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_set_page_dirty_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_account_page_dirtied_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_mark_buffer_dirty_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_fentry, false);
 }
 
 static inline void netdata_ebpf_disable_specific_trampoline(struct cachestat_bpf *obj)
@@ -117,9 +114,6 @@ static inline void netdata_set_trampoline_target(struct cachestat_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_mark_buffer_dirty_fentry, 0,
                                    cachestat_fcnt[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
-
-    bpf_program__set_attach_target(obj->progs.netdata_release_task_fentry, 0,
-                                   cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
 }
 
 static inline int netdata_attach_kprobe_target(struct cachestat_bpf *obj)
@@ -162,12 +156,6 @@ static inline int netdata_attach_kprobe_target(struct cachestat_bpf *obj)
     obj->links.netdata_mark_buffer_dirty_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_mark_buffer_dirty_kprobe,
                                                                     false, cachestat_fcnt[NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY]);
     ret = libbpf_get_error(obj->links.netdata_mark_buffer_dirty_kprobe);
-    if (ret)
-        goto endnakt;
-
-    obj->links.netdata_release_task_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_kprobe,
-                                                                    false, cachestat_fcnt[NETDATA_CACHESTAT_RELEASE_TASK]);
-    ret = libbpf_get_error(obj->links.netdata_release_task_kprobe);
     if (ret)
         goto endnakt;
 
