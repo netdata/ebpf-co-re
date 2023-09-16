@@ -42,13 +42,13 @@ static __always_inline void netdata_update_stored_data(netdata_shm_t *data, __u3
 {
     // we are using if/else if instead switch to avoid warnings
     if (selector == NETDATA_KEY_SHMGET_CALL)
-        libnetdata_update_u64(&data->get, 1);
+        libnetdata_update_u32(&data->get, 1);
     else if (selector == NETDATA_KEY_SHMAT_CALL)
-        libnetdata_update_u64(&data->at, 1);
+        libnetdata_update_u32(&data->at, 1);
     else if (selector == NETDATA_KEY_SHMDT_CALL)
-        libnetdata_update_u64(&data->dt, 1);
+        libnetdata_update_u32(&data->dt, 1);
     else if (selector == NETDATA_KEY_SHMCTL_CALL)
-        libnetdata_update_u64(&data->ctl, 1);
+        libnetdata_update_u32(&data->ctl, 1);
 }
 
 static __always_inline void netdata_set_structure_value(netdata_shm_t *data, __u32 selector)
@@ -73,6 +73,13 @@ static __always_inline int netdata_update_apps(__u32 idx)
     if (fill) {
         netdata_update_stored_data(fill, idx);
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
+
         netdata_set_structure_value(&data, idx);
         bpf_map_update_elem(&tbl_pid_shm, &key, &data, BPF_ANY);
 
