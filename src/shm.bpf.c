@@ -42,13 +42,13 @@ static __always_inline void netdata_update_stored_data(netdata_shm_t *data, __u3
 {
     // we are using if/else if instead switch to avoid warnings
     if (selector == NETDATA_KEY_SHMGET_CALL)
-        libnetdata_update_u64(&data->get, 1);
+        libnetdata_update_u32(&data->get, 1);
     else if (selector == NETDATA_KEY_SHMAT_CALL)
-        libnetdata_update_u64(&data->at, 1);
+        libnetdata_update_u32(&data->at, 1);
     else if (selector == NETDATA_KEY_SHMDT_CALL)
-        libnetdata_update_u64(&data->dt, 1);
+        libnetdata_update_u32(&data->dt, 1);
     else if (selector == NETDATA_KEY_SHMCTL_CALL)
-        libnetdata_update_u64(&data->ctl, 1);
+        libnetdata_update_u32(&data->ctl, 1);
 }
 
 static __always_inline void netdata_set_structure_value(netdata_shm_t *data, __u32 selector)
@@ -73,6 +73,13 @@ static __always_inline int netdata_update_apps(__u32 idx)
     if (fill) {
         netdata_update_stored_data(fill, idx);
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
+
         netdata_set_structure_value(&data, idx);
         bpf_map_update_elem(&tbl_pid_shm, &key, &data, BPF_ANY);
 
@@ -132,23 +139,6 @@ static __always_inline int netdata_ebpf_common_shmctl()
         return 0;
 
     return netdata_update_apps(NETDATA_KEY_SHMCTL_CALL);
-}
-
-static __always_inline int netdata_release_task_shm()
-{
-    netdata_shm_t *removeme;
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&shm_ctrl ,&key);
-    if (!apps || (apps && !*apps))
-        return 0;
-
-    removeme = netdata_get_pid_structure(&key, &shm_ctrl, &tbl_pid_shm);
-    if (removeme) {
-        bpf_map_delete_elem(&tbl_pid_shm, &key);
-        libnetdata_update_global(&shm_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
-    }
-
-    return 0;
 }
 
 /************************************************************************************
@@ -211,12 +201,6 @@ int BPF_KPROBE(netdata_shmctl_probe)
     return netdata_ebpf_common_shmctl();
 }
 
-SEC("kprobe/release_task")
-int BPF_KPROBE(netdata_shm_release_task_probe)
-{
-    return netdata_release_task_shm();
-}
-
 /************************************************************************************
  *
  *                     SHARED MEMORY (trampoline)
@@ -245,12 +229,6 @@ SEC("fentry/netdata_shmctl")
 int BPF_PROG(netdata_shmctl_fentry)
 {
     return netdata_ebpf_common_shmctl();
-}
-
-SEC("fentry/release_task")
-int BPF_PROG(netdata_shm_release_task_fentry)
-{
-    return netdata_release_task_shm();
 }
 
 char _license[] SEC("license") = "GPL";

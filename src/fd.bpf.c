@@ -69,6 +69,12 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
         if (ret < 0) 
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
         data.open_call = 1;
         if (ret < 0)
             data.open_err = 1;
@@ -105,6 +111,12 @@ static __always_inline int netdata_apps_close_fd(int ret)
         if (ret < 0)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
         data.close_call = 1;
         if (ret < 0)
             data.close_err = 1;
@@ -123,27 +135,6 @@ static __always_inline void netdata_close_global(int ret)
         libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_ERROR_CLOSE_FD, 1);
 
     libnetdata_update_global(&tbl_fd_global, NETDATA_KEY_CALLS_CLOSE_FD, 1);
-}
-
-static __always_inline int netdata_release_task_fd()
-{
-    struct netdata_fd_stat_t *removeme;
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&fd_ctrl ,&key);
-    if (apps) {
-        if (*apps == 0)
-            return 0;
-    } else
-        return 0;
-
-    removeme = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
-    if (removeme) {
-        bpf_map_delete_elem(&tbl_fd_pid, &key);
-
-        libnetdata_update_global(&fd_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
-    }
-
-    return 0;
 }
 
 /************************************************************************************
@@ -203,12 +194,6 @@ int BPF_KPROBE(netdata___close_fd_kprobe)
     return netdata_apps_close_fd(0);
 }
 
-SEC("kprobe/release_task")
-int BPF_KPROBE(netdata_release_task_fd_kprobe)
-{
-    return netdata_release_task_fd();
-}
-
 /************************************************************************************
  *
  *                           FD SECTION(trampoline)
@@ -262,13 +247,6 @@ int BPF_PROG(netdata___close_fd_fexit, struct files_struct *files, unsigned fd, 
 
     return netdata_apps_close_fd(ret);
 }
-
-SEC("fentry/release_task")
-int BPF_PROG(netdata_release_task_fd_fentry)
-{
-    return netdata_release_task_fd();
-}
-
 
 char _license[] SEC("license") = "GPL";
 

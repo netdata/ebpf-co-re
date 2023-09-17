@@ -114,6 +114,21 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
     return family;
 }
 
+static __always_inline void update_socket_common(netdata_socket_t *data, __u16 protocol, __u16 family)
+{
+    data->ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+    bpf_get_current_comm(&data->name, TASK_COMM_LEN);
+#else
+    data->name[0] = '\0';
+#endif
+
+    data->first = bpf_ktime_get_ns();
+    data->ct = data->first;
+    data->protocol = protocol;
+    data->family = family;
+}
+
 static __always_inline void update_socket_stats(netdata_socket_t *ptr,
                                                 __u64 sent,
                                                 __u64 received,
@@ -167,10 +182,7 @@ static __always_inline void update_socket_table(struct inet_sock *is,
         update_socket_stats(val, sent, received, retransmitted, protocol);
     } else {
         // This will be present while we do not have network viewer.
-        data.first = bpf_ktime_get_ns();
-        data.ct = data.first;
-        data.protocol = protocol;
-        data.family = family;
+        update_socket_common(&data, protocol, family);
         update_socket_stats(&data, sent, received, retransmitted, protocol);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -199,10 +211,7 @@ static __always_inline void update_pid_connection(struct inet_sock *is)
         else
             libnetdata_update_u32(&stored->tcp.ipv6_connect, 1);
     } else {
-        data.first = bpf_ktime_get_ns();
-        data.ct = data.first;
-        data.protocol = IPPROTO_TCP;
-        data.family = family;
+        update_socket_common(&data, IPPROTO_TCP, family);
         if (family == AF_INET6)
             data.tcp.ipv4_connect = 1;
         else
@@ -292,10 +301,7 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
     if (val) {
         libnetdata_update_u32(&val->external_origin, 1);
     } else {
-        nv_data.first = bpf_ktime_get_ns();
-        nv_data.ct = nv_data.first;
-        nv_data.protocol = protocol;
-        nv_data.family = family;
+        update_socket_common(&nv_data, protocol, family);
         nv_data.external_origin = 1;
 
         bpf_map_update_elem(&tbl_nd_socket, &nv_idx, &nv_data, BPF_ANY);

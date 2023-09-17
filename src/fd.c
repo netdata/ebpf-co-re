@@ -43,8 +43,7 @@ static ebpf_specify_name_t open_names[] = { {.program_name = "netdata_sys_open_k
                                              {.program_name = NULL}};
 
 char *function_list[] = { NULL,
-                          NULL,
-                          "release_task"
+                          NULL
                         };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_FD_RELEASE_TASK 2
@@ -53,7 +52,6 @@ static inline void ebpf_disable_probes(struct fd_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_sys_open_kretprobe, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_fd_kprobe, false);
     if (close_names[0].optional) {
         bpf_program__set_autoload(obj->progs.netdata___close_fd_kretprobe, false);
         bpf_program__set_autoload(obj->progs.netdata___close_fd_kprobe, false);
@@ -84,7 +82,6 @@ static inline void ebpf_disable_trampoline(struct fd_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_close_fd_fexit, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata___close_fd_fexit, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_fd_fentry, false);
 }
 
 static inline void ebpf_disable_specific_trampoline(struct fd_bpf *obj)
@@ -105,9 +102,6 @@ static void ebpf_set_trampoline_target(struct fd_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_sys_open_fexit, 0,
                                    function_list[NETDATA_FD_OPEN]);
-
-    bpf_program__set_attach_target(obj->progs.netdata_release_task_fd_fentry, 0,
-                                   function_list[NETDATA_FD_RELEASE_TASK]);
 
     if (close_names[0].optional) {
         bpf_program__set_attach_target(obj->progs.netdata_close_fd_fentry, 0,

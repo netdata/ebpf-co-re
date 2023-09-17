@@ -16,8 +16,7 @@
 #include "swap.skel.h"
 
 char *function_list[] = { "swap_readpage",
-                          "swap_writepage",
-                          "release_task"
+                          "swap_writepage"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_SWAP_RELEASE_TASK 2
@@ -26,14 +25,12 @@ static void netdata_ebpf_disable_probe(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
-    bpf_program__set_autoload(obj->progs.netdata_swap_release_task_probe, false);
 }
 
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_fentry, false);
-    bpf_program__set_autoload(obj->progs.netdata_release_task_fentry, false);
 }
 
 static void netdata_set_trampoline_target(struct swap_bpf *obj)
@@ -43,9 +40,6 @@ static void netdata_set_trampoline_target(struct swap_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_swap_writepage_fentry, 0,
                                    function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
-
-    bpf_program__set_attach_target(obj->progs.netdata_release_task_fentry, 0,
-                                   function_list[NETDATA_SWAP_RELEASE_TASK]);
 }
 
 static int attach_kprobe(struct swap_bpf *obj)
@@ -59,12 +53,6 @@ static int attach_kprobe(struct swap_bpf *obj)
     obj->links.netdata_swap_writepage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_writepage_probe,
                                                                          false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
     ret = libbpf_get_error(obj->links.netdata_swap_writepage_probe);
-    if (ret)
-        return -1;
-
-    obj->links.netdata_swap_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_release_task_probe,
-                                                                       false, function_list[NETDATA_SWAP_RELEASE_TASK]);
-    ret = libbpf_get_error(obj->links.netdata_swap_release_task_probe);
     if (ret)
         return -1;
 

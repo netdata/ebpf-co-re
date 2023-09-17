@@ -62,7 +62,14 @@ static __always_inline int common_readpage()
     if (fill) {
         libnetdata_update_u64(&fill->read, 1);
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
         data.read = 1;
+
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -85,27 +92,17 @@ static __always_inline int common_writepage()
     if (fill) {
         libnetdata_update_u64(&fill->write, 1);
     } else {
+        data.ct = bpf_ktime_get_ns();
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
+#else
+        data.name[0] = '\0';
+#endif        
         data.write = 1;
+
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
-    }
-
-    return 0;
-}
-
-static __always_inline int netdata_release_task_swap()
-{
-    netdata_swap_access_t *removeme;
-    __u32 key = 0;
-    if (netdata_swap_not_update_apps())
-        return 0;
-
-    removeme = netdata_get_pid_structure(&key, &swap_ctrl, &tbl_pid_swap);
-    if (removeme) {
-        bpf_map_delete_elem(&tbl_pid_swap, &key);
-
-        libnetdata_update_global(&swap_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
 
     return 0;
@@ -129,12 +126,6 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
     return common_writepage();
 }
 
-SEC("kprobe/release_task")
-int BPF_KPROBE(netdata_swap_release_task_probe)
-{
-    return netdata_release_task_swap();
-}
-
 /***********************************************************************************
  *
  *                            SWAP SECTION(trampoline)
@@ -151,12 +142,6 @@ SEC("fentry/swap_writepage")
 int BPF_PROG(netdata_swap_writepage_fentry)
 {
     return common_writepage();
-}
-
-SEC("fentry/release_task")
-int BPF_PROG(netdata_release_task_fentry)
-{
-    return netdata_release_task_swap();
 }
 
 char _license[] SEC("license") = "GPL";
