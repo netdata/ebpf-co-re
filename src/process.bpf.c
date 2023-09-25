@@ -49,9 +49,10 @@ static __always_inline void netdata_fill_common_process_data(struct netdata_pid_
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+    __u32 pid = (0xFFFFFFFF00000000 & pid_tgid)>>32;
 
-    data->pid_tgid = pid_tgid;
-    data->pid = tgid;
+    data->tgid = tgid;
+    data->pid = pid;
 }
 
 static __always_inline int netdata_process_not_update_apps()

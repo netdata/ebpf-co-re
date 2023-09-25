@@ -145,7 +145,7 @@ static pid_t ebpf_update_tables(int global, int apps)
 {
     pid_t pid = ebpf_fill_global(global);
 
-    struct netdata_pid_stat_t stats = { .pid = pid, .pid_tgid = pid, .exit_call = 1, .release_call = 1,
+    struct netdata_pid_stat_t stats = { .pid = pid, .tgid = pid, .exit_call = 1, .release_call = 1,
                                         .create_process = 1, .create_thread = 1, .task_err = 1, 
                                         .removeme = 0 };
 
