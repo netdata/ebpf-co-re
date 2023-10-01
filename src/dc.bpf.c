@@ -63,6 +63,7 @@ static __always_inline int netdata_common_lookup_fast()
         libnetdata_update_u64(&fill->references, 1);
     } else {
         data.references = 1;
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         bpf_map_update_elem(&dcstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&dcstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -86,6 +87,7 @@ static __always_inline int netdata_common_d_lookup(long ret)
         libnetdata_update_u64(&fill->slow, 1);
     } else {
         data.slow = 1;
+        bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         bpf_map_update_elem(&dcstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&dcstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -99,6 +101,7 @@ static __always_inline int netdata_common_d_lookup(long ret)
             libnetdata_update_u64(&fill->missed, 1);
         } else {
             data.missed = 1;
+            bpf_get_current_comm(&data.name, TASK_COMM_LEN);
             bpf_map_update_elem(&dcstat_pid, &key, &data, BPF_ANY);
 
             libnetdata_update_global(&dcstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
