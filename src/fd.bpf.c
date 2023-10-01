@@ -70,11 +70,7 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif        
         data.open_call = 1;
         if (ret < 0)
             data.open_err = 1;
@@ -112,11 +108,7 @@ static __always_inline int netdata_apps_close_fd(int ret)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif        
         data.close_call = 1;
         if (ret < 0)
             data.close_err = 1;

@@ -63,11 +63,7 @@ static __always_inline int netdata_common_page_cache_lru()
         libnetdata_update_u64(&fill->add_to_page_cache_lru, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif
         
         data.add_to_page_cache_lru = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);

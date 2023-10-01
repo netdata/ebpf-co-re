@@ -63,11 +63,7 @@ static __always_inline int common_readpage()
         libnetdata_update_u64(&fill->read, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif        
         data.read = 1;
 
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);
@@ -93,11 +89,7 @@ static __always_inline int common_writepage()
         libnetdata_update_u64(&fill->write, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif        
         data.write = 1;
 
         bpf_map_update_elem(&tbl_pid_swap, &key, &data, BPF_ANY);

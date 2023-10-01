@@ -117,11 +117,7 @@ static __always_inline short unsigned int set_idx_value(netdata_socket_idx_t *ns
 static __always_inline void update_socket_common(netdata_socket_t *data, __u16 protocol, __u16 family)
 {
     data->ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
     bpf_get_current_comm(&data->name, TASK_COMM_LEN);
-#else
-    data->name[0] = '\0';
-#endif
 
     data->first = bpf_ktime_get_ns();
     data->ct = data->first;
