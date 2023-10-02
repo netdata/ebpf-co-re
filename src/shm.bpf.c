@@ -74,11 +74,7 @@ static __always_inline int netdata_update_apps(__u32 idx)
         netdata_update_stored_data(fill, idx);
     } else {
         data.ct = bpf_ktime_get_ns();
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
-#else
-        data.name[0] = '\0';
-#endif        
 
         netdata_set_structure_value(&data, idx);
         bpf_map_update_elem(&tbl_pid_shm, &key, &data, BPF_ANY);
