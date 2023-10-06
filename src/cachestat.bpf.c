@@ -64,7 +64,7 @@ static __always_inline int netdata_common_page_cache_lru()
         libnetdata_update_s64(&fill->misses, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
-        ibnetdata_update_uid_gid(&data.uid, &data.gid);
+        libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
         data.misses = 1;
@@ -143,7 +143,7 @@ static __always_inline int netdata_common_buffer_dirty()
     __u32 tgid = 0;
     fill = netdata_get_pid_structure(&key, &tgid, &cstat_ctrl, &cstat_pid);
     if (fill) {
-        libnetdata_update_u64(&fill->total, -1);
+        libnetdata_update_s64(&fill->total, -1);
         libnetdata_update_u64(&fill->dirty, 1);
     } else {
         data.ct = bpf_ktime_get_ns();

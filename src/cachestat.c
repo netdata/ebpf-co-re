@@ -203,8 +203,7 @@ static pid_t ebpf_update_tables(int global, int apps)
     if (ret)
         fprintf(stderr, "Cannot insert value to global table.");
 
-    netdata_cachestat_t stats = { .add_to_page_cache_lru = 1, .mark_page_accessed = 1,
-                                        .account_page_dirtied = 1, .mark_buffer_dirty = 1 };
+    netdata_cachestat_t stats = { .ct = 0, .uid = 0, .tgid = 0, .total = 1, .misses = 1, .dirty = 1 };
 
     idx = (pid_t)pid;
     ret = bpf_map_update_elem(apps, &idx, &stats, 0);
