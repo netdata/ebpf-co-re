@@ -66,12 +66,13 @@ static __always_inline int netdata_common_release_task()
 {
     struct netdata_pid_stat_t *fill;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 tgid = 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_RELEASE_TASK, 1);
     if (netdata_process_not_update_apps())
         return 0;
 
-    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
+    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         libnetdata_update_u32(&fill->release_call, 1) ;
         fill->removeme = 1;
@@ -85,6 +86,7 @@ static __always_inline int netdata_common_release_task()
 static __always_inline int netdata_common_fork_clone(int ret)
 {
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 tgid = 0;
     struct netdata_pid_stat_t data = { };
     struct netdata_pid_stat_t *fill;
 
@@ -95,7 +97,7 @@ static __always_inline int netdata_common_fork_clone(int ret)
     if (netdata_process_not_update_apps())
         return 0;
 
-    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
+    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
 
@@ -147,6 +149,7 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     struct netdata_pid_stat_t data = { };
     struct netdata_pid_stat_t *fill;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 tgid = 0;
     // This is necessary, because it represents the main function to start a thread
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
 
@@ -154,7 +157,7 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     if (netdata_process_not_update_apps())
         return 0;
 
-    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
+    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
         libnetdata_update_u32(&fill->create_process, 1) ;
@@ -177,6 +180,7 @@ int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr
     struct netdata_pid_stat_t data = { };
     struct netdata_pid_stat_t *fill;
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
+    __u32 tgid = 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
 
@@ -190,7 +194,7 @@ int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr
     if (netdata_process_not_update_apps())
         return 0;
 
-    fill = netdata_get_pid_structure(&key, &process_ctrl, &tbl_pid_stats);
+    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         fill->release_call = 0;
         libnetdata_update_u32(&fill->create_process, 1);

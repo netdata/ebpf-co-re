@@ -68,8 +68,9 @@ static __always_inline int netdata_update_apps(__u32 idx)
 {
     netdata_shm_t data = {};
 
-    __u32 key;
-    netdata_shm_t *fill = netdata_get_pid_structure(&key, &shm_ctrl, &tbl_pid_shm);
+    __u32 key = 0;
+    __u32 tgid = 0;
+    netdata_shm_t *fill = netdata_get_pid_structure(&key, &tgid, &shm_ctrl, &tbl_pid_shm);
     if (fill) {
         netdata_update_stored_data(fill, idx);
     } else {
