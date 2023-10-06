@@ -41,6 +41,7 @@ struct {
 static __always_inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat_t *data)
 {
     data->ct = bpf_ktime_get_ns();
+    libnetdata_update_uid_gid(&data.uid, &data.gid);
     bpf_get_current_comm(&data->name, TASK_COMM_LEN);
 }
 
