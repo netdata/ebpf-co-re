@@ -64,6 +64,7 @@ static __always_inline int common_readpage()
         libnetdata_update_u64(&fill->read, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.read = 1;
 
@@ -91,6 +92,7 @@ static __always_inline int common_writepage()
         libnetdata_update_u64(&fill->write, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.write = 1;
 
