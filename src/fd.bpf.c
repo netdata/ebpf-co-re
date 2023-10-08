@@ -62,14 +62,16 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
     if (!netdata_are_apps_enabled())
         return 0;
 
-    __u32 key;
-    fill = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
+    __u32 key = 0;
+    __u32 tgid = 0;
+    fill = netdata_get_pid_structure(&key, &tgid, &fd_ctrl, &tbl_fd_pid);
     if (fill) {
         libnetdata_update_u32(&fill->open_call, 1) ;
         if (ret < 0) 
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
+        libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.open_call = 1;
         if (ret < 0)
@@ -100,14 +102,16 @@ static __always_inline int netdata_apps_close_fd(int ret)
     if (!netdata_are_apps_enabled())
         return 0;
 
-    __u32 key;
-    fill = netdata_get_pid_structure(&key, &fd_ctrl, &tbl_fd_pid);
+    __u32 key = 0;
+    __u32 tgid = 0;
+    fill = netdata_get_pid_structure(&key, &tgid, &fd_ctrl, &tbl_fd_pid);
     if (fill) {
         libnetdata_update_u32(&fill->close_call, 1) ;
         if (ret < 0)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
+        libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.close_call = 1;
         if (ret < 0)

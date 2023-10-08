@@ -35,6 +35,13 @@ typedef struct ebpf_specify_name {
     bool retprobe;
 } ebpf_specify_name_t;
 
+enum cachestat_counters_user_ring {
+    NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU,
+    NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED,
+    NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED,
+    NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY
+};
+
 /**
  * Update names
  *
