@@ -64,6 +64,7 @@ static __always_inline int netdata_common_page_cache_lru()
         libnetdata_update_s64(&fill->misses, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
@@ -91,6 +92,7 @@ static __always_inline int netdata_common_page_accessed()
         libnetdata_update_s64(&fill->total, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
@@ -118,6 +120,7 @@ static __always_inline int netdata_common_page_dirtied()
         libnetdata_update_s64(&fill->misses, -1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
@@ -147,6 +150,7 @@ static __always_inline int netdata_common_buffer_dirty()
         libnetdata_update_u64(&fill->dirty, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
