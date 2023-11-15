@@ -71,6 +71,7 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.open_call = 1;
@@ -111,6 +112,7 @@ static __always_inline int netdata_apps_close_fd(int ret)
             libnetdata_update_u32(&fill->close_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
+        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         data.close_call = 1;
