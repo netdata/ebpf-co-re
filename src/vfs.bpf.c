@@ -88,6 +88,7 @@ static __always_inline int netdata_common_vfs_write(__u64 tot, ssize_t ret)
 
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0)
             data.write_err = 1;
@@ -130,6 +131,7 @@ static __always_inline int netdata_common_vfs_writev(__u64 tot, ssize_t ret)
         }
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.writev_err = 1;
@@ -171,6 +173,7 @@ static __always_inline int netdata_common_vfs_read(__u64 tot, ssize_t ret)
         }
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.read_err = 1;
@@ -212,6 +215,7 @@ static __always_inline int netdata_common_vfs_readv(__u64 tot, ssize_t ret)
         }
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.readv_err = 1;
@@ -250,6 +254,7 @@ static __always_inline int netdata_common_vfs_unlink(int ret)
         }
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0)
             data.unlink_err = 1;
@@ -287,6 +292,7 @@ static __always_inline int netdata_common_vfs_fsync(int ret)
         } 
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.fsync_err = 1;
@@ -325,6 +331,7 @@ static __always_inline int netdata_common_vfs_open(int ret)
         } 
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.open_err = 1;
@@ -363,6 +370,7 @@ static __always_inline int netdata_common_vfs_create(int ret)
         } 
     } else {
         netdata_fill_common_vfs_data(&data);
+        data.tgid = tgid;
 
         if (ret < 0) {
             data.create_err = 1;
