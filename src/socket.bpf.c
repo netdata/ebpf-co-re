@@ -130,9 +130,11 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
                                                 __u64 sent,
                                                 __u64 received,
                                                 __u32 retransmitted,
-                                                __u16 protocol)
+                                                __u16 protocol,
+                                                int state)
 {
     ptr->ct = bpf_ktime_get_ns();
+    ptr->tcp.state = (state > 0) ? state : 0;
 
     if (sent) {
         if (protocol == IPPROTO_TCP) {
@@ -164,7 +166,7 @@ static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u64 received,
                                                 __u32 retransmitted,
                                                 __u16 protocol,
-                                                __u32 state)
+                                                int state)
 {
     netdata_socket_idx_t idx = { };
 
@@ -177,13 +179,11 @@ static __always_inline void update_socket_table(struct inet_sock *is,
 
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        update_socket_stats(val, sent, received, retransmitted, protocol);
-        val->tcp.state = state;
+        update_socket_stats(val, sent, received, retransmitted, protocol, state);
     } else {
         // This will be present while we do not have network viewer.
         update_socket_common(&data, protocol, family);
-        update_socket_stats(&data, sent, received, retransmitted, protocol);
-        data.tcp.state = state;
+        update_socket_stats(&data, sent, received, retransmitted, protocol, state);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
