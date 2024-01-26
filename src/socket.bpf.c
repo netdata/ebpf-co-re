@@ -336,6 +336,15 @@ static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct in
     return 0;
 }
 
+static __always_inline int netdata_common_tcp_set_state(struct inet_sock *is, int state)
+{
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_SET_STATE, 1);
+
+    update_socket_table(NULL, 0, 0, 0, IPPROTO_TCP, state);
+
+    return 0;
+}
+
 static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
 {
     netdata_socket_t *val;
@@ -468,6 +477,15 @@ int BPF_KPROBE(netdata_tcp_cleanup_rbuf_kprobe)
     __u64 received = (__u64) copied;
 
     return netdata_common_tcp_cleanup_rbuf(copied, is, received);
+}
+
+SEC("kprobe/tcp_set_state")
+int BPF_KPROBE(netdata_tcp_set_state_kprobe)
+{
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    int state = (int)PT_REGS_PARM2(ctx);
+
+    return netdata_common_tcp_set_state(is, state);
 }
 
 SEC("kprobe/tcp_close")
@@ -616,6 +634,17 @@ int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
     __u64 received = (__u64) copied;
 
     return netdata_common_tcp_cleanup_rbuf(copied, is, received);
+}
+
+SEC("fentry/tcp_set_state")
+int BPF_PROG(netdata_tcp_set_state_fentry, struct sock *sk, int state)
+{
+    if (!sk)
+        return 0;
+
+    struct inet_sock *is = (struct inet_sock *)sk;
+
+    return netdata_common_tcp_set_state(is, state);
 }
 
 SEC("fentry/tcp_close")
