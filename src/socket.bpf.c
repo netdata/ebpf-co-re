@@ -163,7 +163,8 @@ static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u64 sent,
                                                 __u64 received,
                                                 __u32 retransmitted,
-                                                __u16 protocol)
+                                                __u16 protocol,
+                                                __u32 state)
 {
     netdata_socket_idx_t idx = { };
 
@@ -177,10 +178,12 @@ static __always_inline void update_socket_table(struct inet_sock *is,
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
         update_socket_stats(val, sent, received, retransmitted, protocol);
+        val->tcp.state = state;
     } else {
         // This will be present while we do not have network viewer.
         update_socket_common(&data, protocol, family);
         update_socket_stats(&data, sent, received, retransmitted, protocol);
+        data.tcp.state = state;
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -229,7 +232,7 @@ static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, IPPROTO_TCP);
+    update_socket_table(is, sent, 0, 0, IPPROTO_TCP, 0);
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_SENDMSG, sent);
 
     return 0;
@@ -244,7 +247,7 @@ static __always_inline int common_udp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, IPPROTO_UDP);
+    update_socket_table(is, sent, 0, 0, IPPROTO_UDP, 0);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_SENDMSG, (__u64) sent);
 
@@ -312,7 +315,7 @@ static __always_inline int netdata_common_tcp_retransmit(struct inet_sock *is)
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_RETRANSMIT, 1);
 
-    update_socket_table(is, 0, 0, 1, IPPROTO_TCP);
+    update_socket_table(is, 0, 0, 1, IPPROTO_TCP, 0);
 
     return 0;
 }
@@ -326,7 +329,7 @@ static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct in
         return 0;
     }
 
-    update_socket_table(is, 0, (__u64)copied, 1, IPPROTO_TCP);
+    update_socket_table(is, 0, (__u64)copied, 1, IPPROTO_TCP, 0);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_CLEANUP_RBUF, received);
 
@@ -377,7 +380,7 @@ static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *i
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
-    update_socket_table(is, 0, received, 0, IPPROTO_UDP);
+    update_socket_table(is, 0, received, 0, IPPROTO_UDP, 0);
 
     return 0;
 }
