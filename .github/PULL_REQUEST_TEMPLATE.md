@@ -27,4 +27,4 @@ helpful if there is no related issue.
 
 | Linux Distribution |   Environment  |Kernel Version |    Error    | Success |
 |--------------------|----------------|---------------|-------------|---------|
-| LINUX DISTRIBUION  | Bare metal/VM  | uname -r      |             |         |
+| LINUX DISTRIBUTION  | Bare metal/VM  | uname -r      |             |         |

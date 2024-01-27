@@ -130,9 +130,11 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
                                                 __u64 sent,
                                                 __u64 received,
                                                 __u32 retransmitted,
-                                                __u16 protocol)
+                                                __u16 protocol,
+                                                int state)
 {
     ptr->ct = bpf_ktime_get_ns();
+    ptr->tcp.state = (state > 0) ? state : 0;
 
     if (sent) {
         if (protocol == IPPROTO_TCP) {
@@ -163,7 +165,8 @@ static __always_inline void update_socket_table(struct inet_sock *is,
                                                 __u64 sent,
                                                 __u64 received,
                                                 __u32 retransmitted,
-                                                __u16 protocol)
+                                                __u16 protocol,
+                                                int state)
 {
     netdata_socket_idx_t idx = { };
 
@@ -176,11 +179,11 @@ static __always_inline void update_socket_table(struct inet_sock *is,
 
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
-        update_socket_stats(val, sent, received, retransmitted, protocol);
+        update_socket_stats(val, sent, received, retransmitted, protocol, state);
     } else {
         // This will be present while we do not have network viewer.
         update_socket_common(&data, protocol, family);
-        update_socket_stats(&data, sent, received, retransmitted, protocol);
+        update_socket_stats(&data, sent, received, retransmitted, protocol, state);
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -229,7 +232,7 @@ static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, IPPROTO_TCP);
+    update_socket_table(is, sent, 0, 0, IPPROTO_TCP, 0);
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_SENDMSG, sent);
 
     return 0;
@@ -244,7 +247,7 @@ static __always_inline int common_udp_send_message(struct inet_sock *is, size_t 
         return 0;
     }
 
-    update_socket_table(is, sent, 0, 0, IPPROTO_UDP);
+    update_socket_table(is, sent, 0, 0, IPPROTO_UDP, 0);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_SENDMSG, (__u64) sent);
 
@@ -312,7 +315,7 @@ static __always_inline int netdata_common_tcp_retransmit(struct inet_sock *is)
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_TCP_RETRANSMIT, 1);
 
-    update_socket_table(is, 0, 0, 1, IPPROTO_TCP);
+    update_socket_table(is, 0, 0, 1, IPPROTO_TCP, 0);
 
     return 0;
 }
@@ -326,9 +329,18 @@ static __always_inline int netdata_common_tcp_cleanup_rbuf(int copied, struct in
         return 0;
     }
 
-    update_socket_table(is, 0, (__u64)copied, 1, IPPROTO_TCP);
+    update_socket_table(is, 0, (__u64)copied, 1, IPPROTO_TCP, 0);
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_TCP_CLEANUP_RBUF, received);
+
+    return 0;
+}
+
+static __always_inline int netdata_common_tcp_set_state(struct inet_sock *is, int state)
+{
+    libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_SET_STATE, 1);
+
+    update_socket_table(NULL, 0, 0, 0, IPPROTO_TCP, state);
 
     return 0;
 }
@@ -377,7 +389,7 @@ static __always_inline int netdata_common_udp_recvmsg_return(struct inet_sock *i
 
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_BYTES_UDP_RECVMSG, received);
 
-    update_socket_table(is, 0, received, 0, IPPROTO_UDP);
+    update_socket_table(is, 0, received, 0, IPPROTO_UDP, 0);
 
     return 0;
 }
@@ -465,6 +477,15 @@ int BPF_KPROBE(netdata_tcp_cleanup_rbuf_kprobe)
     __u64 received = (__u64) copied;
 
     return netdata_common_tcp_cleanup_rbuf(copied, is, received);
+}
+
+SEC("kprobe/tcp_set_state")
+int BPF_KPROBE(netdata_tcp_set_state_kprobe)
+{
+    struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
+    int state = (int)PT_REGS_PARM2(ctx);
+
+    return netdata_common_tcp_set_state(is, state);
 }
 
 SEC("kprobe/tcp_close")
@@ -613,6 +634,17 @@ int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
     __u64 received = (__u64) copied;
 
     return netdata_common_tcp_cleanup_rbuf(copied, is, received);
+}
+
+SEC("fentry/tcp_set_state")
+int BPF_PROG(netdata_tcp_set_state_fentry, struct sock *sk, int state)
+{
+    if (!sk)
+        return 0;
+
+    struct inet_sock *is = (struct inet_sock *)sk;
+
+    return netdata_common_tcp_set_state(is, state);
 }
 
 SEC("fentry/tcp_close")
