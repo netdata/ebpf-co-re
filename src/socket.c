@@ -120,7 +120,7 @@ static int ebpf_attach_probes(struct socket_bpf *obj)
         return -1;
 
     obj->links.netdata_tcp_set_state_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_tcp_set_state_kprobe,
-                                                                          true, function_list[NETDATA_SOCKET_FCNT_END]);
+                                                                          true, function_list[NETDATA_FCNT_TCP_SET_STATE]);
     ret = libbpf_get_error(obj->links.netdata_tcp_set_state_kprobe);
     if (ret)
         return -1;
@@ -211,7 +211,7 @@ static void ebpf_set_trampoline_target(struct socket_bpf *obj)
                                    function_list[NETDATA_FCNT_UDP_SENDMSG]);
 
     bpf_program__set_attach_target(obj->progs.netdata_tcp_set_state_fentry, 0,
-                                   function_list[NETDATA_SOCKET_FCNT_END]);
+                                   function_list[NETDATA_FCNT_TCP_SET_STATE]);
 }
 
 static inline int ebpf_load_and_attach(struct socket_bpf *obj, int selector)

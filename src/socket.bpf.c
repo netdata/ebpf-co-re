@@ -134,7 +134,7 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
                                                 int state)
 {
     ptr->ct = bpf_ktime_get_ns();
-    ptr->tcp.state = (state > 0) ? state : 0;
+    ptr->tcp.state = state;
 
     if (sent) {
         if (protocol == IPPROTO_TCP) {
@@ -340,7 +340,7 @@ static __always_inline int netdata_common_tcp_set_state(struct inet_sock *is, in
 {
     libnetdata_update_global(&tbl_global_sock, NETDATA_KEY_CALLS_TCP_SET_STATE, 1);
 
-    update_socket_table(NULL, 0, 0, 0, IPPROTO_TCP, state);
+    update_socket_table(is, 0, 0, 0, IPPROTO_TCP, state);
 
     return 0;
 }
