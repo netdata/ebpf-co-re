@@ -174,7 +174,7 @@ static __always_inline void set_common_udp_nv_data(netdata_nv_data_t *data,
  ***********************************************************************************/
 
 SEC("kretprobe/inet_csk_accept")
-int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
+int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_RC(ctx);
     if (!am_i_monitoring_protocol(sk))
@@ -200,7 +200,7 @@ int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
 }
 
 SEC("kprobe/tcp_v4_connect")
-int BPF_KRETPROBE(netdata_tcp_v4_connect_kprobe)
+int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -224,7 +224,7 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kprobe)
 }
 
 SEC("kprobe/tcp_v6_connect")
-int BPF_KRETPROBE(netdata_tcp_v6_connect_kprobe)
+int BPF_KRETPROBE(netdata_nv_tcp_v6_connect_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -248,7 +248,7 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kprobe)
 }
 
 SEC("kprobe/tcp_retransmit_skb")
-int BPF_KPROBE(netdata_tcp_retransmit_skb_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -273,7 +273,7 @@ int BPF_KPROBE(netdata_tcp_retransmit_skb_kprobe)
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/tcp.c#L1528
 SEC("kprobe/tcp_cleanup_rbuf")
-int BPF_KPROBE(netdata_tcp_cleanup_rbuf_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -297,7 +297,7 @@ int BPF_KPROBE(netdata_tcp_cleanup_rbuf_kprobe)
 }
 
 SEC("kprobe/tcp_set_state")
-int BPF_KPROBE(netdata_tcp_set_state_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
 
@@ -322,7 +322,7 @@ int BPF_KPROBE(netdata_tcp_set_state_kprobe)
 }
 
 SEC("kprobe/tcp_sendmsg")
-int BPF_KPROBE(netdata_tcp_sendmsg_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -346,7 +346,7 @@ int BPF_KPROBE(netdata_tcp_sendmsg_kprobe)
 }
 
 SEC("kprobe/udp_sendmsg")
-int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
+int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk)
@@ -373,7 +373,7 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 }
 
 SEC("kprobe/udp_recvmsg")
-int BPF_KPROBE(netdata_udp_recvmsg_kprobe)
+int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk)
@@ -406,7 +406,7 @@ int BPF_KPROBE(netdata_udp_recvmsg_kprobe)
  ***********************************************************************************/
 
 SEC("fexit/inet_csk_accept")
-int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
+int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
 {
     if (!am_i_monitoring_protocol(sk))
         return 0;
@@ -431,7 +431,7 @@ int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
 }
 
 SEC("fentry/tcp_v4_connect")
-int BPF_PROG(netdata_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -454,7 +454,7 @@ int BPF_PROG(netdata_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr *ua
 }
 
 SEC("fentry/tcp_v6_connect")
-int BPF_PROG(netdata_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
+int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -477,7 +477,7 @@ int BPF_PROG(netdata_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr *ua
 }
 
 SEC("fentry/tcp_retransmit_skb")
-int BPF_PROG(netdata_tcp_retransmit_skb_fentry, struct sock *sk)
+int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -501,7 +501,7 @@ int BPF_PROG(netdata_tcp_retransmit_skb_fentry, struct sock *sk)
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/tcp.c#L1528
 SEC("fentry/tcp_cleanup_rbuf")
-int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
+int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -524,7 +524,7 @@ int BPF_PROG(netdata_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
 }
 
 SEC("fentry/tcp_set_state")
-int BPF_PROG(netdata_tcp_set_state_fentry, struct sock *sk, int state)
+int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -546,7 +546,7 @@ int BPF_PROG(netdata_tcp_set_state_fentry, struct sock *sk, int state)
 }
 
 SEC("fentry/tcp_sendmsg")
-int BPF_PROG(netdata_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t size)
+int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t size)
 {
     if (!sk || sk == (void *)1)
         return 0;
@@ -569,7 +569,7 @@ int BPF_PROG(netdata_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, si
 }
 
 SEC("fentry/udp_sendmsg")
-int BPF_PROG(netdata_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t len)
+int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t len)
 {
     if (!sk)
         return 0;
@@ -596,7 +596,7 @@ int BPF_PROG(netdata_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, si
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
 SEC("fentry/udp_recvmsg")
-int BPF_PROG(netdata_udp_recvmsg_fentry, struct sock *sk)
+int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
 {
     if (!sk)
         return 0;
