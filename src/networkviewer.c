@@ -179,6 +179,33 @@ static inline int ebpf_load_and_attach(struct networkviewer_bpf *obj, int select
     return ret;
 }
 
+static int netdata_read_socket(struct networkviewer_bpf *obj, int ebpf_nprocs)
+{
+    netdata_socket_t stored[ebpf_nprocs];
+
+    uint64_t counter = 0;
+    int fd = bpf_map__fd(obj->maps.tbl_nv_socket);
+    netdata_nv_idx_t key =  { };
+    netdata_nv_idx_t next_key = { };
+    while (!bpf_map_get_next_key(fd, &key, &next_key)) {
+        if (!bpf_map_lookup_elem(fd, &key, stored)) {
+            counter++;
+        }
+
+        key = next_key;
+    }
+
+    if (counter) {
+        fprintf(stdout, "Socket data stored with success. It collected %lu sockets\n", counter);
+        return 0;
+    }
+
+    fprintf(stdout, "Cannot read socket data.\n");
+
+    return 2;
+}
+
+
 int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
 {
     struct networkviewer_bpf *obj = NULL;
@@ -190,6 +217,8 @@ int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
     if (!obj) {
         goto load_error;
     }
+
+    obj->rodata->collect_everything = true;
 
     int ret = ebpf_load_and_attach(obj, selector);
     if (ret && selector != NETDATA_MODE_PROBE) {
@@ -204,9 +233,30 @@ int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
         ret = ebpf_load_and_attach(obj, selector);
     }
 
+    if (!ret) {
+        ebpf_core_fill_ctrl(obj->maps.nv_ctrl, map_level);
+
+        sleep(60);
+
+        // Separator between load and result
+        fprintf(stdout, "\n=================  READ DATA =================\n\n");
+        if (!ret) {
+
+            ret += netdata_read_socket(obj, ebpf_nprocs);
+
+            if (!ret)
+                fprintf(stdout, "All stored data were retrieved with success!\n");
+        } else
+            fprintf(stderr, "Cannot read global table\n");
+    } else {
+        ret = 3;
+        fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
+    }
+
+
     networkviewer_bpf__destroy(obj);
 
-    return 0;
+    return ret;
 
 load_error:
     fprintf(stderr, "Cannot open or load BPF object\n");
