@@ -1,6 +1,6 @@
 #!/bin/bash
 
-three_tests=( "cachestat" "dc" "fd" "mount" "process" "shm" "socket" "swap" "sync" "vfs" )
+three_tests=( "cachestat" "dc" "fd" "mount" "networkviewer" "process" "shm" "socket" "swap" "sync" "vfs" )
 one_test=( "disk" "hardirq" "oomkill" "softirq" )
 end_loop=
 ADDITIONAL_ARG=
