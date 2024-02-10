@@ -163,7 +163,9 @@ static __always_inline void set_common_udp_nv_data(netdata_nv_data_t *data,
                                                    __u16 family) {
     data->protocol = IPPROTO_UDP;
     data->family = family;
-    BPF_CORE_READ_INTO(&data->state, sk, __sk_common.skc_state);
+    unsigned char udp_state;
+    bpf_probe_read(&udp_state, sizeof(udp_state), (void *)&sk->__sk_common.skc_state);
+    data->state = (int) udp_state;
     bpf_get_current_comm(&data->name, TASK_COMM_LEN);
 }
 
@@ -357,7 +359,6 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_udp_nv_data(val, sk, family);
-        BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
         return 0;
     }
 
@@ -384,7 +385,6 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_udp_nv_data(val, sk, family);
-        BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
         return 0;
     }
 
