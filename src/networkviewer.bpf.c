@@ -182,7 +182,7 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
     if (!am_i_monitoring_protocol(sk))
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -208,7 +208,7 @@ int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -232,7 +232,7 @@ int BPF_KRETPROBE(netdata_nv_tcp_v6_connect_kprobe)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -256,7 +256,7 @@ int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -281,7 +281,7 @@ int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -307,7 +307,7 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
         return 0;
 
     int state = (int)PT_REGS_PARM2(ctx);
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -330,7 +330,7 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -354,7 +354,7 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
     if (!sk)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -380,7 +380,7 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
     if (!sk)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -411,7 +411,7 @@ int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
     if (!am_i_monitoring_protocol(sk))
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -436,7 +436,7 @@ int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr 
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -459,7 +459,7 @@ int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr 
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -482,7 +482,7 @@ int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -506,7 +506,7 @@ int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -529,7 +529,7 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -551,7 +551,7 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     if (!sk || sk == (void *)1)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -574,7 +574,7 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     if (!sk)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
@@ -601,7 +601,7 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
     if (!sk)
         return 0;
 
-    netdata_nv_idx_t idx;
+    netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
