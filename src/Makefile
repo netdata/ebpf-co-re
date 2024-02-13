@@ -22,6 +22,7 @@ APPS = cachestat \
        fd \
        filesystem \
        hardirq \
+       networkviewer \
        mdflush \
        mount \
        oomkill \
