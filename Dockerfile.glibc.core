@@ -13,7 +13,7 @@ RUN apt-get update && \
     apt-get install -y build-essential autoconf automake coreutils pkg-config \
                        bc libelf-dev libssl-dev clang-tools-16 libclang-16-dev \
                        llvm-16 rsync bison flex tar xz-utils wget libbfd-dev \
-                       libcap-dev bpftool linux-tools-generic
+                       libcap-dev bpftool linux-tools-azure
 
 # hadolint ignore=DL3059
 RUN ln -s /usr/bin/clang-16 /usr/bin/clang && \
