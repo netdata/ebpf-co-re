@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         kernel_version:
-          - '6.1.26'
+          - '6.6.17'
         libc:
           - glibc
     runs-on: ubuntu-latest

@@ -3,7 +3,7 @@ FROM ubuntu:23.04 AS build
 ARG ARCH=x86
 ENV ARCH=$ARCH
 
-ARG LOCAL_KERNEL_VERSION=6.1.26
+ARG LOCAL_KERNEL_VERSION=6.6.17
 
 ENV _LIBC=glibc
 
@@ -11,13 +11,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3018,DL3015,DL3008,DL3009
 RUN apt-get update && \
     apt-get install -y build-essential autoconf automake coreutils pkg-config \
-                       bc libelf-dev libssl-dev clang-tools-15 libclang-15-dev \
-                       llvm-15 rsync bison flex tar xz-utils wget libbfd-dev \
+                       bc libelf-dev libssl-dev clang-tools-16 libclang-16-dev \
+                       llvm-16 rsync bison flex tar xz-utils wget libbfd-dev \
                        libcap-dev
 
 # hadolint ignore=DL3059
-RUN ln -s /usr/bin/clang-15 /usr/bin/clang && \
-    ln -s /usr/bin/llvm-strip-15 /usr/bin/llvm-strip
+RUN ln -s /usr/bin/clang-16 /usr/bin/clang && \
+    ln -s /usr/bin/llvm-strip-16 /usr/bin/llvm-strip
 
 # hadolint ignore=DL3003,SC3009,DL4006,SC2046
 RUN mkdir -p /usr/src && \
