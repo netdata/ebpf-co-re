@@ -218,7 +218,7 @@ int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
         goto load_error;
     }
 
-    obj->rodata->collect_everything = true;
+//    obj->rodata->collect_everything = true;
 
     int ret = ebpf_load_and_attach(obj, selector);
     if (ret && selector != NETDATA_MODE_PROBE) {
