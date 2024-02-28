@@ -147,7 +147,10 @@ static __always_inline void set_common_tcp_nv_data(netdata_nv_idx_t *idx,
 
     data->pid = bpf_get_current_pid_tgid() >> 32;
     data->uid = bpf_get_current_uid_gid();
-    data->ts = bpf_ktime_get_ns();
+    // Only update this data when it is a new value
+    if (!data->ts)
+        data->ts = bpf_ktime_get_ns();
+
     data->timer = 0;
     bpf_probe_read(&data->retransmits, sizeof(data->retransmits), &icsk->icsk_retransmits);
     data->expires = 0;
@@ -168,7 +171,10 @@ static __always_inline void set_common_udp_nv_data(netdata_nv_idx_t *idx,
                                                    __u16 family) {
     data->pid = bpf_get_current_pid_tgid() >> 32;
     data->uid = bpf_get_current_uid_gid();
-    data->ts = bpf_ktime_get_ns();
+    // Only update this data when it is a new value
+    if (!data->ts)
+        data->ts = bpf_ktime_get_ns();
+
     data->protocol = IPPROTO_UDP;
     data->family = family;
     unsigned char udp_state;
