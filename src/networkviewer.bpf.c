@@ -147,6 +147,7 @@ static __always_inline void set_common_tcp_nv_data(netdata_nv_idx_t *idx,
 
     data->pid = bpf_get_current_pid_tgid() >> 32;
     data->uid = bpf_get_current_uid_gid();
+    data->ts = bpf_ktime_get_ns();
     data->timer = 0;
     bpf_probe_read(&data->retransmits, sizeof(data->retransmits), &icsk->icsk_retransmits);
     data->expires = 0;
@@ -165,6 +166,9 @@ static __always_inline void set_common_udp_nv_data(netdata_nv_idx_t *idx,
                                                    netdata_nv_data_t *data,
                                                    struct sock *sk,
                                                    __u16 family) {
+    data->pid = bpf_get_current_pid_tgid() >> 32;
+    data->uid = bpf_get_current_uid_gid();
+    data->ts = bpf_ktime_get_ns();
     data->protocol = IPPROTO_UDP;
     data->family = family;
     unsigned char udp_state;
@@ -326,6 +330,9 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
     if (!monitor_apps(&nv_ctrl))
         return 0;
 
+    netdata_nv_data_t data = { };
+    data.state = state;
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
 
     return 0;
 }
@@ -541,6 +548,10 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
 
     if (!monitor_apps(&nv_ctrl))
         return 0;
+
+    netdata_nv_data_t data = { };
+    data.state = state;
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
 
     return 0;
 }
