@@ -57,16 +57,12 @@ static __always_inline __u16 set_nv_idx_value(netdata_nv_idx_t *nvi, struct sock
         BPF_CORE_READ_INTO(&nvi->saddr.ipv4, is, inet_saddr );
         BPF_CORE_READ_INTO(&nvi->daddr.ipv4, is, sk.__sk_common.skc_daddr );
         if (nvi->saddr.ipv4 == 0 || nvi->daddr.ipv4 == 0) // Zero
-            return AF_UNSPEC;
+            return AF_INET;
     }
     // Check necessary according https://elixir.bootlin.com/linux/v5.6.14/source/include/net/sock.h#L199
     else if ( family == AF_INET6 ) {
-        BPF_CORE_READ_INTO(&nvi->saddr.ipv6.addr8, is, sk.__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8 );
-        BPF_CORE_READ_INTO(&nvi->daddr.ipv6.addr8, is, sk.__sk_common.skc_v6_daddr.in6_u.u6_addr8 );
-
-        if (((nvi->saddr.ipv6.addr64[0] == 0) && (nvi->saddr.ipv6.addr64[1] == 0)) ||
-            ((nvi->daddr.ipv6.addr64[0] == 0) && (nvi->daddr.ipv6.addr64[1] == 0))) // Zero addr
-            return AF_UNSPEC;
+        BPF_CORE_READ_INTO(&nvi->saddr.ipv6.in6_u.u6_addr8, is, sk.__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8 );
+        BPF_CORE_READ_INTO(&nvi->daddr.ipv6.in6_u.u6_addr8, is, sk.__sk_common.skc_v6_daddr.in6_u.u6_addr8 );
     }
     else {
         return AF_UNSPEC;
