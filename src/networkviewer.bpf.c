@@ -224,7 +224,7 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
 }
 
 SEC("kprobe/tcp_v4_connect")
-int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_v4_connect_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -249,7 +249,7 @@ int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
 }
 
 SEC("kprobe/tcp_v6_connect")
-int BPF_KRETPROBE(netdata_nv_tcp_v6_connect_kprobe)
+int BPF_KPROBE(netdata_nv_tcp_v6_connect_kprobe)
 {
     struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
     if (!sk || sk == (void *)1)
@@ -376,6 +376,26 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
+}
+
+SEC("kprobe/tcp_close")
+int BPF_KPROBE(netdata_nv_tcp_close_kprobe)
+{
+    struct sock *sk = (struct sock*)PT_REGS_PARM1(ctx);
+    if (!sk || sk == (void *)1)
+        return 0;
+
+    netdata_nv_idx_t idx = {};
+    __u16 family = set_nv_idx_value(&idx, sk);
+    netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
+    if (!val) {
+        return 0;
+    }
+
+    val->closed = 1;
+
+    return 0;
+
 }
 
 SEC("kprobe/udp_sendmsg")
@@ -609,6 +629,21 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     return 0;
 }
 
+SEC("fentry/tcp_close")
+int BPF_PROG(netdata_nv_tcp_close_fentry, struct sock *sk, long timeout)
+{
+    netdata_nv_idx_t idx = {};
+    __u16 family = set_nv_idx_value(&idx, sk);
+    netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
+    if (!val) {
+        return 0;
+    }
+
+    val->closed = 1;
+
+    return 0;
+}
+
 SEC("fentry/udp_sendmsg")
 int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t len)
 {
@@ -649,6 +684,7 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
         direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
         BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
+        val->closed = 1;
         return 0;
     }
 
