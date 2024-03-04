@@ -60,8 +60,14 @@ static int ebpf_attach_probes(struct networkviewer_bpf *obj)
         return -1;
 
     obj->links.netdata_nv_tcp_cleanup_rbuf_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_nv_tcp_cleanup_rbuf_kprobe,
-                                                                            false, function_list[NETDATA_FCNT_CLEANUP_RBUF]);
+                                                                            false, function_list[NETDATA_FCNT_TCP_CLOSE]);
     ret = libbpf_get_error(obj->links.netdata_nv_tcp_cleanup_rbuf_kprobe);
+    if (ret)
+        return -1;
+
+    obj->links.netdata_nv_tcp_close_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_nv_tcp_close_kprobe,
+                                                                            false, function_list[NETDATA_FCNT_CLEANUP_RBUF]);
+    ret = libbpf_get_error(obj->links.netdata_nv_tcp_close_kprobe);
     if (ret)
         return -1;
 
@@ -99,6 +105,7 @@ static void ebpf_disable_probes(struct networkviewer_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_v6_connect_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_retransmit_skb_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_cleanup_rbuf_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_nv_tcp_close_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_udp_recvmsg_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_sendmsg_kprobe, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_udp_sendmsg_kprobe, false);
@@ -112,6 +119,7 @@ static void ebpf_disable_trampoline(struct networkviewer_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_v6_connect_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_retransmit_skb_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_cleanup_rbuf_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_nv_tcp_close_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_udp_recvmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_tcp_sendmsg_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_nv_udp_sendmsg_fentry, false);
@@ -134,6 +142,9 @@ static void ebpf_set_trampoline_target(struct networkviewer_bpf *obj)
 
     bpf_program__set_attach_target(obj->progs.netdata_nv_tcp_cleanup_rbuf_fentry, 0,
                                    function_list[NETDATA_FCNT_CLEANUP_RBUF]);
+
+    bpf_program__set_attach_target(obj->progs.netdata_nv_tcp_close_fentry, 0,
+                                   function_list[NETDATA_FCNT_TCP_CLOSE]);
 
     bpf_program__set_attach_target(obj->progs.netdata_nv_udp_recvmsg_fentry, 0,
                                    function_list[NETDATA_FCNT_UDP_RECEVMSG]);
