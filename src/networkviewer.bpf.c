@@ -98,7 +98,8 @@ static __always_inline void set_common_tcp_nv_data(netdata_nv_idx_t *idx,
                                                    netdata_nv_data_t *data,
                                                    struct sock *sk,
                                                    __u16 family,
-                                                   int state)
+                                                   int state,
+                                                   NETDATA_SOCKET_DIRECTION direction)
 {
     const struct inet_sock *is = (struct inet_sock *)sk;
     const struct inet_connection_sock *icsk = (struct inet_connection_sock *)sk;
@@ -152,6 +153,9 @@ static __always_inline void set_common_tcp_nv_data(netdata_nv_idx_t *idx,
     data->expires = 0;
     data->rqueue = rx_queue;
 
+    if (data->direction == NETDATA_SOCKET_DIRECTION_NONE)
+        data->direction = direction;
+
     data->family = family;
     data->protocol = IPPROTO_TCP;
 
@@ -199,9 +203,10 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -209,7 +214,7 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -223,9 +228,10 @@ int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -233,7 +239,7 @@ int BPF_KRETPROBE(netdata_nv_tcp_v4_connect_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -247,9 +253,10 @@ int BPF_KRETPROBE(netdata_nv_tcp_v6_connect_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -257,7 +264,7 @@ int BPF_KRETPROBE(netdata_nv_tcp_v6_connect_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -271,9 +278,10 @@ int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -281,7 +289,7 @@ int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -296,9 +304,10 @@ int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -306,7 +315,7 @@ int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -322,9 +331,10 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
     int state = (int)PT_REGS_PARM2(ctx);
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, state);
+        set_common_tcp_nv_data(&idx, val, sk, family, state, direction);
         val->state = state;
         return 0;
     }
@@ -334,7 +344,7 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
 
     netdata_nv_data_t data = { };
     data.state = state;
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -348,9 +358,10 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -358,7 +369,7 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -425,9 +436,10 @@ int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -435,7 +447,7 @@ int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -448,9 +460,10 @@ int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr 
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -458,7 +471,7 @@ int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr 
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -471,9 +484,10 @@ int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr 
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -481,7 +495,7 @@ int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr 
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -494,9 +508,10 @@ int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -504,7 +519,7 @@ int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -518,9 +533,10 @@ int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -528,7 +544,7 @@ int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -541,9 +557,10 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, state);
+        set_common_tcp_nv_data(&idx, val, sk, family, state, direction);
         val->state = state;
         return 0;
     }
@@ -553,7 +570,7 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
 
     netdata_nv_data_t data = { };
     data.state = state;
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
@@ -566,9 +583,10 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
+    NETDATA_SOCKET_DIRECTION direction = (idx.sport == idx.dport) ? NETDATA_SOCKET_DIRECTION_LISTEN : NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        set_common_tcp_nv_data(&idx, val, sk, family, 0);
+        set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
         return 0;
     }
 
@@ -576,7 +594,7 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
         return 0;
 
     netdata_nv_data_t data = { };
-    set_common_tcp_nv_data(&idx, &data, sk, family, 0);
+    set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     return 0;
 }
