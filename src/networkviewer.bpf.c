@@ -431,9 +431,10 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
-    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
+    NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
+        direction = NETDATA_SOCKET_DIRECTION_INBOUND;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
         return 0;
     }
@@ -442,6 +443,7 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
+    direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
@@ -474,7 +476,7 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
         return 0;
 
     netdata_nv_data_t data = { };
-    direction = NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
+    direction = NETDATA_SOCKET_DIRECTION_INBOUND;
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
@@ -712,9 +714,10 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
 
     netdata_nv_idx_t idx = {};
     __u16 family = set_nv_idx_value(&idx, sk);
-    NETDATA_SOCKET_DIRECTION direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
+    NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
+        direction = NETDATA_SOCKET_DIRECTION_INBOUND;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
         BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
         return 0;
@@ -724,6 +727,7 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
         return 0;
 
     netdata_nv_data_t data = { };
+    direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
@@ -756,7 +760,7 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
         return 0;
 
     netdata_nv_data_t data = { };
-    direction = NETDATA_SOCKET_DIRECTION_OUTBOUND | NETDATA_SOCKET_DIRECTION_INBOUND;
+    direction = NETDATA_SOCKET_DIRECTION_INBOUND;
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
