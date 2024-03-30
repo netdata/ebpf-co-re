@@ -231,7 +231,6 @@ static inline void fill_swap_fcnt()
     int i;
     for (i = 0; swap_names[i].program_name ; i++) {
         if (swap_names[i].optional) {
-            fprintf(stderr, "KILLME %s\n", swap_names[i].program_name);
             function_list[NETDATA_KEY_SWAP_READPAGE_CALL] = swap_names[i].optional;
             break;
         }
