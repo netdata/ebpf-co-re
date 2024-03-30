@@ -54,6 +54,7 @@ static inline void netdata_ebpf_disable_specific_probe(struct swap_bpf *obj)
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_fentry, false);
 }
 
@@ -77,9 +78,17 @@ static void netdata_set_trampoline_target(struct swap_bpf *obj)
 
 static int attach_kprobe(struct swap_bpf *obj)
 {
-    obj->links.netdata_swap_readpage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_readpage_probe,
+    int ret;
+    if (swap_names[0].optional) {
+        obj->links.netdata_swap_read_folio_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_read_folio_probe,
                                                                         false, function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
-    int ret = libbpf_get_error(obj->links.netdata_swap_readpage_probe);
+        ret = libbpf_get_error(obj->links.netdata_swap_read_folio_probe);
+    } else {
+        obj->links.netdata_swap_readpage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_readpage_probe,
+                                                                        false, function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
+        ret = libbpf_get_error(obj->links.netdata_swap_readpage_probe);
+    }
+
     if (ret)
         return -1;
 
@@ -222,6 +231,7 @@ static inline void fill_swap_fcnt()
     int i;
     for (i = 0; swap_names[i].program_name ; i++) {
         if (swap_names[i].optional) {
+            fprintf(stderr, "KILLME %s\n", swap_names[i].program_name);
             function_list[NETDATA_KEY_SWAP_READPAGE_CALL] = swap_names[i].optional;
             break;
         }
