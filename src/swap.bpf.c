@@ -112,6 +112,12 @@ static __always_inline int common_writepage()
  *
  ***********************************************************************************/
 
+SEC("kprobe/swap_read_folio")
+int BPF_KPROBE(netdata_swap_read_folio_probe)
+{
+    return common_readpage();
+}
+
 SEC("kprobe/swap_readpage")
 int BPF_KPROBE(netdata_swap_readpage_probe)
 {
@@ -129,6 +135,12 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
  *                            SWAP SECTION(trampoline)
  *
  ***********************************************************************************/
+
+SEC("fentry/swap_read_folio")
+int BPF_PROG(netdata_swap_read_folio_fentry)
+{
+    return common_readpage();
+}
 
 SEC("fentry/swap_readpage")
 int BPF_PROG(netdata_swap_readpage_fentry)
