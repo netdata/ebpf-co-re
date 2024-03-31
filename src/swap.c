@@ -15,7 +15,21 @@
 
 #include "swap.skel.h"
 
-char *function_list[] = { "swap_readpage",
+// Alma Linux modified internal name, this structure was brought for it.
+static ebpf_specify_name_t swap_names[] = { {.program_name = "netdata_swap_read_folio_probe",
+                                                  .function_to_attach = "swap_read_folio",
+                                                  .length = 15,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = "netdata_swap_readpage_probe",
+                                                  .function_to_attach = "swap_readpage",
+                                                  .length = 13,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = NULL}};
+
+
+char *function_list[] = { NULL, // Filled after to discover available functions
                           "swap_writepage"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
@@ -24,13 +38,33 @@ char *function_list[] = { "swap_readpage",
 static void netdata_ebpf_disable_probe(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
+}
+
+static inline void netdata_ebpf_disable_specific_probe(struct swap_bpf *obj)
+{
+    if (swap_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
+    } else  {
+        bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_probe, false);
+    }
 }
 
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
 {
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_fentry, false);
+}
+
+static inline void netdata_ebpf_disable_specific_trampoline(struct swap_bpf *obj)
+{
+    if (swap_names[0].optional) {
+        bpf_program__set_autoload(obj->progs.netdata_swap_readpage_fentry, false);
+    } else  {
+        bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_fentry, false);
+    }
 }
 
 static void netdata_set_trampoline_target(struct swap_bpf *obj)
@@ -44,9 +78,17 @@ static void netdata_set_trampoline_target(struct swap_bpf *obj)
 
 static int attach_kprobe(struct swap_bpf *obj)
 {
-    obj->links.netdata_swap_readpage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_readpage_probe,
+    int ret;
+    if (swap_names[0].optional) {
+        obj->links.netdata_swap_read_folio_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_read_folio_probe,
                                                                         false, function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
-    int ret = libbpf_get_error(obj->links.netdata_swap_readpage_probe);
+        ret = libbpf_get_error(obj->links.netdata_swap_read_folio_probe);
+    } else {
+        obj->links.netdata_swap_readpage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_readpage_probe,
+                                                                        false, function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
+        ret = libbpf_get_error(obj->links.netdata_swap_readpage_probe);
+    }
+
     if (ret)
         return -1;
 
@@ -63,10 +105,12 @@ static int ebpf_load_and_attach(struct swap_bpf *obj, int selector)
 {
     if (!selector) { //trampoline
         netdata_ebpf_disable_probe(obj);
+        netdata_ebpf_disable_specific_trampoline(obj);
 
         netdata_set_trampoline_target(obj);
     } else if (selector) { // probe
         netdata_ebpf_disable_trampoline(obj);
+        netdata_ebpf_disable_specific_probe(obj);
     }
 
     int ret = swap_bpf__load(obj);
@@ -181,6 +225,18 @@ load_error:
     return 2;
 }
 
+static inline void fill_swap_fcnt()
+{
+    ebpf_update_names(swap_names);
+    int i;
+    for (i = 0; swap_names[i].program_name ; i++) {
+        if (swap_names[i].optional) {
+            function_list[NETDATA_KEY_SWAP_READPAGE_CALL] = swap_names[i].optional;
+            break;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     static struct option long_options[] = {
@@ -238,6 +294,12 @@ int main(int argc, char **argv)
 
     libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+
+    fill_swap_fcnt();
+    if (!function_list[NETDATA_KEY_SWAP_READPAGE_CALL]) {
+        fprintf(stderr, "Cannot find all necessary functions\n");
+        return 0;
+    }
 
     struct btf *bf = NULL;
     if (!selector) {
