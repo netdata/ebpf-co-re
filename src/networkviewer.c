@@ -47,11 +47,13 @@ static int ebpf_attach_probes(struct networkviewer_bpf *obj)
     if (ret)
         return -1;
 
+    /*
     obj->links.netdata_nv_tcp_v6_connect_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_nv_tcp_v6_connect_kprobe,
                                                                           false, function_list[NETDATA_FCNT_TCP_V6_CONNECT]);
     ret = libbpf_get_error(obj->links.netdata_nv_tcp_v6_connect_kprobe);
     if (ret)
         return -1;
+        */
 
     obj->links.netdata_nv_tcp_retransmit_skb_kprobe = bpf_program__attach_kprobe(obj->progs.netdata_nv_tcp_retransmit_skb_kprobe,
                                                                               false, function_list[NETDATA_FCNT_TCP_RETRANSMIT]);
@@ -170,6 +172,8 @@ static inline int ebpf_load_and_attach(struct networkviewer_bpf *obj, int select
     } else if (selector == NETDATA_MODE_PROBE) {  // kprobe
         ebpf_disable_trampoline(obj);
     }
+    bpf_program__set_autoload(obj->progs.netdata_nv_tcp_v6_connect_kprobe, false);
+    bpf_program__set_autoload(obj->progs.netdata_nv_tcp_v6_connect_fentry, false);
 
     ret = networkviewer_bpf__load(obj);
     if (ret) {
