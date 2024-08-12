@@ -38,8 +38,10 @@ struct {
  *
  ***********************************************************************************/
 
-static __always_inline int netdata_cachetat_not_update_apps()
+static __always_inline int netdata_cachetat_not_update_apps(__u32 idx)
 {
+    libnetdata_update_global(&cstat_global, idx, 1);
+
     __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
     __u32 *apps = bpf_map_lookup_elem(&cstat_ctrl ,&key);
     if (apps && *apps)
@@ -52,23 +54,21 @@ static __always_inline int netdata_common_page_cache_lru()
 {
     netdata_cachestat_t *fill, data = {};
 
-    libnetdata_update_global(&cstat_global, NETDATA_KEY_MISSES, 1);
-
-    if (netdata_cachetat_not_update_apps())
+    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU))
         return 0;
 
     __u32 key = 0;
     __u32 tgid = 0;
     fill = netdata_get_pid_structure(&key, &tgid, &cstat_ctrl, &cstat_pid);
     if (fill) {
-        libnetdata_update_s64(&fill->misses, 1);
+        libnetdata_update_u32(&fill->add_to_page_cache_lru, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
-        data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
+        data.tgid = tgid;
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
-        data.misses = 1;
+        data.add_to_page_cache_lru = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -80,23 +80,21 @@ static __always_inline int netdata_common_page_cache_lru()
 static __always_inline int netdata_common_page_accessed()
 {
     netdata_cachestat_t *fill, data = {};
-    libnetdata_update_global(&cstat_global, NETDATA_KEY_TOTAL, 1);
-
-    if (netdata_cachetat_not_update_apps())
+    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED))
         return 0;
 
     __u32 key = 0;
     __u32 tgid = 0;
     fill = netdata_get_pid_structure(&key, &tgid, &cstat_ctrl, &cstat_pid);
     if (fill) {
-        libnetdata_update_s64(&fill->total, 1);
+        libnetdata_update_u32(&fill->mark_page_accessed, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
         data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
-        data.total = 1;
+        data.mark_page_accessed = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -109,22 +107,21 @@ static __always_inline int netdata_common_page_dirtied()
 {
     netdata_cachestat_t *fill, data = {};
 
-    libnetdata_update_sglobal(&cstat_global, NETDATA_KEY_MISSES, -1);
-    if (netdata_cachetat_not_update_apps())
+    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED))
         return 0;
 
     __u32 key = 0;
     __u32 tgid = 0;
     fill = netdata_get_pid_structure(&key, &tgid, &cstat_ctrl, &cstat_pid);
     if (fill) {
-        libnetdata_update_s64(&fill->misses, -1);
+        libnetdata_update_u32(&fill->account_page_dirtied, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
         data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
-        data.misses = -1;
+        data.account_page_dirtied = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
@@ -137,25 +134,21 @@ static __always_inline int netdata_common_buffer_dirty()
 {
     netdata_cachestat_t *fill, data = {};
 
-    libnetdata_update_sglobal(&cstat_global, NETDATA_KEY_TOTAL, -1);
-    libnetdata_update_global(&cstat_global, NETDATA_KEY_DIRTY, 1);
-    if (netdata_cachetat_not_update_apps())
+    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY))
         return 0;
 
     __u32 key = 0;
     __u32 tgid = 0;
     fill = netdata_get_pid_structure(&key, &tgid, &cstat_ctrl, &cstat_pid);
     if (fill) {
-        libnetdata_update_s64(&fill->total, -1);
-        libnetdata_update_u64(&fill->dirty, 1);
+        libnetdata_update_u32(&fill->mark_buffer_dirty, 1);
     } else {
         data.ct = bpf_ktime_get_ns();
         data.tgid = tgid;
         libnetdata_update_uid_gid(&data.uid, &data.gid);
         bpf_get_current_comm(&data.name, TASK_COMM_LEN);
         
-        data.dirty = 1;
-        data.total = -1;
+        data.mark_buffer_dirty = 1;
         bpf_map_update_elem(&cstat_pid, &key, &data, BPF_ANY);
 
         libnetdata_update_global(&cstat_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
