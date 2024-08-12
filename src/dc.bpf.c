@@ -61,7 +61,7 @@ static __always_inline int netdata_common_lookup_fast()
 
     fill = netdata_get_pid_structure(&key, &tgid, &dcstat_ctrl, &dcstat_pid);
     if (fill) {
-        libnetdata_update_u64(&fill->references, 1);
+        libnetdata_update_u32(&fill->references, 1);
     } else {
         data.references = 1;
         data.tgid = tgid;
@@ -88,7 +88,7 @@ static __always_inline int netdata_common_d_lookup(long ret)
 
     fill = netdata_get_pid_structure(&key, &tgid, &dcstat_ctrl, &dcstat_pid);
     if (fill) {
-        libnetdata_update_u64(&fill->slow, 1);
+        libnetdata_update_u32(&fill->slow, 1);
     } else {
         data.slow = 1;
         data.tgid = tgid;
@@ -104,7 +104,7 @@ static __always_inline int netdata_common_d_lookup(long ret)
         libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_MISS, 1);
         fill = netdata_get_pid_structure(&key, &tgid, &dcstat_ctrl, &dcstat_pid);
         if (fill) {
-            libnetdata_update_u64(&fill->missed, 1);
+            libnetdata_update_u32(&fill->missed, 1);
         }
     }
 

@@ -75,7 +75,6 @@ static __always_inline int netdata_common_release_task()
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
         libnetdata_update_u32(&fill->release_call, 1) ;
-        fill->removeme = 1;
 
         libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_DEL, 1);
     }
