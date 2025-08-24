@@ -130,9 +130,9 @@ static int attach_kprobe(struct swap_bpf *obj)
                                                                              false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
         ret = libbpf_get_error(obj->links.netdata_swap_writepage_probe);
     } else {
-        obj->links.netdata___swap_writepage_fentry = bpf_program__attach_kprobe(obj->progs.netdata___swap_writepage_fentry,
+        obj->links.netdata___swap_writepage_probe = bpf_program__attach_kprobe(obj->progs.netdata___swap_writepage_probe,
                                                                                 false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
-        ret = libbpf_get_error(obj->links.netdata___swap_writepage_fentry);
+        ret = libbpf_get_error(obj->links.netdata___swap_writepage_probe);
     }
 
     if (ret)
