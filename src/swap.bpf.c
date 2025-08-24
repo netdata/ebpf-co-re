@@ -130,6 +130,12 @@ int BPF_KPROBE(netdata_swap_writepage_probe)
     return common_writepage();
 }
 
+SEC("kprobe/__swap_writepage")
+int BPF_KPROBE(netdata___swap_writepage_probe)
+{
+    return common_writepage();
+}
+
 /***********************************************************************************
  *
  *                            SWAP SECTION(trampoline)
@@ -150,6 +156,12 @@ int BPF_PROG(netdata_swap_readpage_fentry)
 
 SEC("fentry/swap_writepage")
 int BPF_PROG(netdata_swap_writepage_fentry)
+{
+    return common_writepage();
+}
+
+SEC("fentry/__swap_writepage")
+int BPF_PROG(netdata___swap_writepage_fentry)
 {
     return common_writepage();
 }

@@ -26,12 +26,21 @@ static ebpf_specify_name_t swap_names[] = { {.program_name = "netdata_swap_read_
                                                   .length = 13,
                                                   .optional = NULL,
                                                   .retprobe = 0},
+                                                 {.program_name = "netdata_swap_writepage_probe",
+                                                  .function_to_attach = "swap_writepage",
+                                                  .length = 14,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
+                                                 {.program_name = "netdata___swap_writepage_probe",
+                                                  .function_to_attach = "__swap_writepage",
+                                                  .length = 16,
+                                                  .optional = NULL,
+                                                  .retprobe = 0},
                                                  {.program_name = NULL}};
 
 
 char *function_list[] = { NULL, // Filled after to discover available functions
-                          "swap_writepage"
-};
+                          NULL };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_SWAP_RELEASE_TASK 2
 
@@ -40,6 +49,7 @@ static void netdata_ebpf_disable_probe(struct swap_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata___swap_writepage_probe, false);
 }
 
 static inline void netdata_ebpf_disable_specific_probe(struct swap_bpf *obj)
@@ -49,6 +59,12 @@ static inline void netdata_ebpf_disable_specific_probe(struct swap_bpf *obj)
     } else  {
         bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_probe, false);
     }
+
+    if (swap_names[2].optional) {
+        bpf_program__set_autoload(obj->progs.netdata___swap_writepage_probe, false);
+    } else  {
+        bpf_program__set_autoload(obj->progs.netdata_swap_writepage_probe, false);
+    }
 }
 
 static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
@@ -56,6 +72,7 @@ static void netdata_ebpf_disable_trampoline(struct swap_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_swap_readpage_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_fentry, false);
     bpf_program__set_autoload(obj->progs.netdata_swap_writepage_fentry, false);
+    bpf_program__set_autoload(obj->progs.netdata___swap_writepage_fentry, false);
 }
 
 static inline void netdata_ebpf_disable_specific_trampoline(struct swap_bpf *obj)
@@ -65,15 +82,31 @@ static inline void netdata_ebpf_disable_specific_trampoline(struct swap_bpf *obj
     } else  {
         bpf_program__set_autoload(obj->progs.netdata_swap_read_folio_fentry, false);
     }
+
+    if (swap_names[2].optional) {
+        bpf_program__set_autoload(obj->progs.netdata___swap_writepage_fentry, false);
+    } else  {
+        bpf_program__set_autoload(obj->progs.netdata_swap_writepage_fentry, false);
+    }
 }
 
 static void netdata_set_trampoline_target(struct swap_bpf *obj)
 {
-    bpf_program__set_attach_target(obj->progs.netdata_swap_readpage_fentry, 0,
-                                   function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
+    if (swap_names[0].optional) {
+        bpf_program__set_attach_target(obj->progs.netdata_swap_readpage_fentry, 0,
+                                      function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
+    } else {
+        bpf_program__set_attach_target(obj->progs.netdata_swap_read_folio_fentry, 0,
+                                      function_list[NETDATA_KEY_SWAP_READPAGE_CALL]);
+    }
 
-    bpf_program__set_attach_target(obj->progs.netdata_swap_writepage_fentry, 0,
-                                   function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
+    if (swap_names[2].optional) {
+        bpf_program__set_attach_target(obj->progs.netdata_swap_writepage_fentry, 0,
+                                      function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
+    } else {
+        bpf_program__set_attach_target(obj->progs.netdata___swap_writepage_fentry, 0,
+                                      function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
+    }
 }
 
 static int attach_kprobe(struct swap_bpf *obj)
@@ -92,9 +125,16 @@ static int attach_kprobe(struct swap_bpf *obj)
     if (ret)
         return -1;
 
-    obj->links.netdata_swap_writepage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_writepage_probe,
-                                                                         false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
-    ret = libbpf_get_error(obj->links.netdata_swap_writepage_probe);
+    if (swap_names[2].optional) {
+        obj->links.netdata_swap_writepage_probe = bpf_program__attach_kprobe(obj->progs.netdata_swap_writepage_probe,
+                                                                             false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
+        ret = libbpf_get_error(obj->links.netdata_swap_writepage_probe);
+    } else {
+        obj->links.netdata___swap_writepage_fentry = bpf_program__attach_kprobe(obj->progs.netdata___swap_writepage_fentry,
+                                                                                false, function_list[NETDATA_KEY_SWAP_WRITEPAGE_CALL]);
+        ret = libbpf_get_error(obj->links.netdata___swap_writepage_fentry);
+    }
+
     if (ret)
         return -1;
 
@@ -231,8 +271,8 @@ static inline void fill_swap_fcnt()
     int i;
     for (i = 0; swap_names[i].program_name ; i++) {
         if (swap_names[i].optional) {
-            function_list[NETDATA_KEY_SWAP_READPAGE_CALL] = swap_names[i].optional;
-            break;
+            int key =  ( i < 2) ? NETDATA_KEY_SWAP_READPAGE_CALL: NETDATA_KEY_SWAP_WRITEPAGE_CALL;
+            function_list[key] = swap_names[i].optional;
         }
     }
 }
