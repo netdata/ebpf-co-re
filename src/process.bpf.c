@@ -117,6 +117,46 @@ static __always_inline int netdata_common_fork_clone(int ret)
     return 0;
 }
 
+static void netdata_tracepoint_common_sched_process_fork(int parent_pid, int child_pid)
+{
+    struct netdata_pid_stat_t data = { };
+    struct netdata_pid_stat_t *fill;
+    __u32 key = 0;
+    __u32 tgid = 0;
+
+    libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
+
+    // Parent ID = 1 means that init called process/thread creation
+    int thread = 0;
+    if (parent_pid != child_pid && parent_pid != 1) {
+        thread = 1;
+        libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
+    }
+
+    if (netdata_process_not_update_apps())
+        return;
+
+    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
+    if (fill) {
+        fill->release_call = 0;
+        libnetdata_update_u32(&fill->create_process, 1);
+        if (thread)
+            libnetdata_update_u32(&fill->create_thread, 1);
+    } else {
+        netdata_fill_common_process_data(&data);
+        data.tgid = tgid;
+        data.create_process = 1;
+        if (thread)
+            data.create_thread = 1;
+
+        bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
+
+        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
+    }
+
+}
+
+
 /************************************************************************************
  *
  *                     PROCESS SECTION (tracepoints)
@@ -179,41 +219,15 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
 SEC("tracepoint/sched/sched_process_fork")
 int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr)
 {
-    struct netdata_pid_stat_t data = { };
-    struct netdata_pid_stat_t *fill;
-    __u32 key = 0;
-    __u32 tgid = 0;
+    netdata_tracepoint_common_sched_process_fork(ptr->parent_pid, ptr->child_pid);
+    return 0;
+}
 
-    libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
-
-    // Parent ID = 1 means that init called process/thread creation
-    int thread = 0;
-    if (ptr->parent_pid != ptr->child_pid && ptr->parent_pid != 1) {
-        thread = 1;
-        libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
-    }
-
-    if (netdata_process_not_update_apps())
-        return 0;
-
-    fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
-    if (fill) {
-        fill->release_call = 0;
-        libnetdata_update_u32(&fill->create_process, 1);
-        if (thread)
-            libnetdata_update_u32(&fill->create_thread, 1);
-    } else {
-        netdata_fill_common_process_data(&data);
-        data.tgid = tgid;
-        data.create_process = 1;
-        if (thread)
-            data.create_thread = 1;
-
-        bpf_map_update_elem(&tbl_pid_stats, &key, &data, BPF_ANY);
-
-        libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
-    }
-
+// It must be always enabled
+SEC("tracepoint/sched/sched_process_fork")
+int netdata_tracepoint_sched_process_fork_v2(struct netdata_sched_process_fork_v2 *ptr)
+{
+    netdata_tracepoint_common_sched_process_fork(ptr->parent_pid, ptr->child_pid);
     return 0;
 }
 

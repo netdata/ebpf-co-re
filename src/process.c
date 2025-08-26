@@ -123,6 +123,14 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
     ebpf_disable_clone3(obj);
 #endif
 
+#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(6,16,0))
+    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, true);
+    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, false);
+#else
+    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, true);
+    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, false);
+#endif
+
     int ret = process_bpf__load(obj);
     if (ret) {
         fprintf(stderr, "failed to load BPF object: %d\n", ret);
