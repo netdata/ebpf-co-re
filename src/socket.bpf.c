@@ -42,7 +42,7 @@ struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __type(key, __u64);
     __type(value, void *);
-    __uint(max_entries, 8192);
+    __uint(max_entries, 4096);
 } tbl_nv_udp SEC(".maps");
 
 struct {
@@ -212,7 +212,7 @@ static __always_inline void update_pid_connection(struct inet_sock *is)
             libnetdata_update_u32(&stored->tcp.ipv6_connect, 1);
     } else {
         update_socket_common(&data, IPPROTO_TCP, family);
-        if (family == AF_INET6)
+        if (family == AF_INET)
             data.tcp.ipv4_connect = 1;
         else
             data.tcp.ipv6_connect = 1;
@@ -270,8 +270,8 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
     idx.protocol = protocol;
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
+    __u32 tgid = (__u32)(pid_tgid >> 32);
+    __u32 pid = (__u32)pid_tgid;
 
     netdata_passive_connection_t *value = (netdata_passive_connection_t *)bpf_map_lookup_elem(&tbl_lports, &idx);
     if (value) {
@@ -727,4 +727,3 @@ int BPF_PROG(netdata_udp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
 }
 
 char _license[] SEC("license") = "GPL";
-
