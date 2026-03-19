@@ -36,7 +36,7 @@ struct {
 static __always_inline int netdata_nfs_entry()
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
+    __u32 pid = (__u32)pid_tgid;
     __u64 ts = bpf_ktime_get_ns();
 
     bpf_map_update_elem(&tmp_nfs, &pid, &ts, BPF_ANY);
@@ -48,7 +48,7 @@ static __always_inline int netdata_nfs_store_bin(__u32 selection)
 {
     __u64 *fill, data;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 bin, pid = (__u32)(pid_tgid >> 32);
+    __u32 bin, pid = (__u32)pid_tgid;
 
     fill = bpf_map_lookup_elem(&tmp_nfs, &pid);
     if (!fill)

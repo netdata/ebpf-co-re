@@ -92,16 +92,7 @@ static __always_inline int netdata_global_apps_shm(__u32 idx)
 {
     libnetdata_update_global(&tbl_shm, idx, 1);
 
-    // check if apps is enabled; if not, don't record apps data.
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&shm_ctrl, &key);
-    if (apps) {
-        if (*apps == 0) {
-            return 0;
-        }
-    }
-
-    return 1;
+    return monitor_apps(&shm_ctrl);
 }
 
 static __always_inline int netdata_ebpf_common_shmget()
