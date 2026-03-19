@@ -38,15 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static __always_inline int netdata_dc_not_update_apps()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&dcstat_ctrl ,&key);
-    if (apps && *apps)
-        return 0;
 
-    return 1;
-}
 
 static __always_inline int netdata_common_lookup_fast()
 {
@@ -56,7 +48,7 @@ static __always_inline int netdata_common_lookup_fast()
 
     libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_REFERENCE, 1);
 
-    if (netdata_dc_not_update_apps())
+    if (!monitor_apps(&dcstat_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &dcstat_ctrl, &dcstat_pid);
@@ -83,7 +75,7 @@ static __always_inline int netdata_common_d_lookup(long ret)
 
     libnetdata_update_global(&dcstat_global, NETDATA_KEY_DC_SLOW, 1);
 
-    if (netdata_dc_not_update_apps())
+    if (!monitor_apps(&dcstat_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &dcstat_ctrl, &dcstat_pid);
