@@ -14,8 +14,6 @@
 
 #include "hardirq.skel.h"
 
-// Copied and redefined from ../include/netdata_hardirq.h
-#define NETDATA_HARDIRQ_NAME_LEN 32
 typedef struct hardirq_val {
     // incremental counter storing the total latency so far.
     uint64_t latency;
@@ -25,8 +23,8 @@ typedef struct hardirq_val {
     // `latency` field.
     uint64_t ts;
 
-    // identifies the IRQ with a human-readable string.
-    char name[NETDATA_HARDIRQ_NAME_LEN];
+    // PID stored together with the hardirq sample.
+    uint32_t pid;
 } hardirq_val_t;
 
 static inline int ebpf_load_and_attach(struct hardirq_bpf *obj)
@@ -48,7 +46,7 @@ static inline int ebpf_load_and_attach(struct hardirq_bpf *obj)
 static void ebpf_update_table(int global)
 {
     uint32_t idx = 0;
-    hardirq_val_t value =  { .ts = 1, .latency = 1, .name = "netdata_testing" };
+    hardirq_val_t value =  { .ts = 1, .latency = 1, .pid = 1 };
     int ret = bpf_map_update_elem(global, &idx, &value, 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to global table.");
@@ -142,4 +140,3 @@ int main(int argc, char **argv)
 
     return ebpf_hardirq_tests();
 }
-
