@@ -36,7 +36,7 @@ struct {
 static __always_inline int netdata_nfs_entry()
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)pid_tgid;
+    __u32 pid = (__u32)(pid_tgid >> 32);
     __u64 ts = bpf_ktime_get_ns();
 
     bpf_map_update_elem(&tmp_nfs, &pid, &ts, BPF_ANY);
