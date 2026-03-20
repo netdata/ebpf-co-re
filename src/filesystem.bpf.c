@@ -57,7 +57,7 @@ static __always_inline int netdata_fs_store_bin(__u32 selection)
 {
     __u64 *fill, data;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 bin, pid = (__u32)pid_tgid;
+    __u32 bin, pid = (__u32)(pid_tgid >> 32);
 
     fill = bpf_map_lookup_elem(&tmp_fs, &pid);
     if (!fill)
@@ -264,5 +264,4 @@ int BPF_KRETPROBE(netdata_fs_getattr_retprobe)
 }
 
 char _license[] SEC("license") = "GPL";
-
 
