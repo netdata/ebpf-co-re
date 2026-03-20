@@ -38,13 +38,11 @@ struct {
  *
  ***********************************************************************************/
 
-static __always_inline int netdata_cachetat_not_update_apps(__u32 idx)
+static __always_inline int netdata_cachestat_update_apps(__u32 idx)
 {
     libnetdata_update_global(&cstat_global, idx, 1);
 
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&cstat_ctrl ,&key);
-    if (apps && *apps)
+    if (!monitor_apps(&cstat_ctrl))
         return 0;
 
     return 1;
@@ -54,7 +52,7 @@ static __always_inline int netdata_common_page_cache_lru()
 {
     netdata_cachestat_t *fill, data = {};
 
-    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU))
+    if (!netdata_cachestat_update_apps(NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU))
         return 0;
 
     __u32 key = 0;
@@ -80,7 +78,7 @@ static __always_inline int netdata_common_page_cache_lru()
 static __always_inline int netdata_common_page_accessed()
 {
     netdata_cachestat_t *fill, data = {};
-    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED))
+    if (!netdata_cachestat_update_apps(NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED))
         return 0;
 
     __u32 key = 0;
@@ -107,7 +105,7 @@ static __always_inline int netdata_common_page_dirtied()
 {
     netdata_cachestat_t *fill, data = {};
 
-    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED))
+    if (!netdata_cachestat_update_apps(NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED))
         return 0;
 
     __u32 key = 0;
@@ -134,7 +132,7 @@ static __always_inline int netdata_common_buffer_dirty()
 {
     netdata_cachestat_t *fill, data = {};
 
-    if (netdata_cachetat_not_update_apps(NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY))
+    if (!netdata_cachestat_update_apps(NETDATA_KEY_CALLS_MARK_BUFFER_DIRTY))
         return 0;
 
     __u32 key = 0;

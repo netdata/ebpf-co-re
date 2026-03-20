@@ -45,16 +45,6 @@ static __always_inline void netdata_fill_common_vfs_data(struct netdata_vfs_stat
     bpf_get_current_comm(&data->name, TASK_COMM_LEN);
 }
 
-static __always_inline int netdata_vfs_not_update_apps()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&vfs_ctrl ,&key);
-    if (apps && *apps)
-        return 0;
-
-    return 1;
-}
-
 
 /************************************************************************************
  *     
@@ -73,7 +63,7 @@ static __always_inline int netdata_common_vfs_write(__u64 tot, ssize_t ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -116,7 +106,7 @@ static __always_inline int netdata_common_vfs_writev(__u64 tot, ssize_t ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -158,7 +148,7 @@ static __always_inline int netdata_common_vfs_read(__u64 tot, ssize_t ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -200,7 +190,7 @@ static __always_inline int netdata_common_vfs_readv(__u64 tot, ssize_t ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -241,7 +231,7 @@ static __always_inline int netdata_common_vfs_unlink(int ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -279,7 +269,7 @@ static __always_inline int netdata_common_vfs_fsync(int ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -318,7 +308,7 @@ static __always_inline int netdata_common_vfs_open(int ret)
     
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);
@@ -357,7 +347,7 @@ static __always_inline int netdata_common_vfs_create(int ret)
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_vfs_not_update_apps())
+    if (!monitor_apps(&vfs_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &vfs_ctrl, &tbl_vfs_pid);

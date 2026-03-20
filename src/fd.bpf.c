@@ -38,16 +38,6 @@ struct {
  *
  ***********************************************************************************/
 
-static __always_inline int netdata_are_apps_enabled()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&fd_ctrl ,&key);
-    if (apps)
-        if (*apps == 0)
-            return 0;
-
-    return 1;
-}
 
 /************************************************************************************
  *
@@ -59,7 +49,7 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
     struct netdata_fd_stat_t *fill;
     struct netdata_fd_stat_t data = { };
 
-    if (!netdata_are_apps_enabled())
+    if (!monitor_apps(&fd_ctrl))
         return 0;
 
     __u32 key = 0;
@@ -67,7 +57,7 @@ static __always_inline int netdata_apps_do_sys_openat2(long ret)
     fill = netdata_get_pid_structure(&key, &tgid, &fd_ctrl, &tbl_fd_pid);
     if (fill) {
         libnetdata_update_u32(&fill->open_call, 1) ;
-        if (ret < 0) 
+        if (ret < 0)
             libnetdata_update_u32(&fill->open_err, 1) ;
     } else {
         data.ct = bpf_ktime_get_ns();
@@ -100,7 +90,7 @@ static __always_inline int netdata_apps_close_fd(int ret)
     struct netdata_fd_stat_t data = { };
     struct netdata_fd_stat_t *fill;
 
-    if (!netdata_are_apps_enabled())
+    if (!monitor_apps(&fd_ctrl))
         return 0;
 
     __u32 key = 0;

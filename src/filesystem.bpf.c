@@ -265,4 +265,3 @@ int BPF_KRETPROBE(netdata_fs_getattr_retprobe)
 
 char _license[] SEC("license") = "GPL";
 
-

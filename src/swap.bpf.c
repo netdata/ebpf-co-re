@@ -38,15 +38,7 @@ struct {
  *
  ***********************************************************************************/
 
-static __always_inline int netdata_swap_not_update_apps()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&swap_ctrl ,&key);
-    if (apps && *apps)
-        return 0;
 
-    return 1;
-}
 
 static __always_inline int common_readpage()
 {
@@ -56,7 +48,7 @@ static __always_inline int common_readpage()
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_swap_not_update_apps())
+    if (!monitor_apps(&swap_ctrl))
         return 0;
 
     netdata_swap_access_t *fill = netdata_get_pid_structure(&key, &tgid, &swap_ctrl, &tbl_pid_swap);
@@ -85,7 +77,7 @@ static __always_inline int common_writepage()
 
     __u32 key = 0;
     __u32 tgid = 0;
-    if (netdata_swap_not_update_apps())
+    if (!monitor_apps(&swap_ctrl))
         return 0;
 
     netdata_swap_access_t *fill = netdata_get_pid_structure(&key, &tgid, &swap_ctrl, &tbl_pid_swap);

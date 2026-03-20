@@ -32,6 +32,11 @@ struct {
  *
  ***********************************************************************************/
 
+static __always_inline __u32 netdata_hardirq_pid(void)
+{
+    return (__u32)bpf_get_current_pid_tgid();
+}
+
 SEC("tracepoint/irq/irq_handler_entry")
 int netdata_irq_handler_entry(struct netdata_irq_handler_entry *ptr)
 {
@@ -42,9 +47,11 @@ int netdata_irq_handler_entry(struct netdata_irq_handler_entry *ptr)
     valp = bpf_map_lookup_elem(&tbl_hardirq, &key);
     if (valp) {
         valp->ts = bpf_ktime_get_ns();
+        valp->pid = netdata_hardirq_pid();
     } else {
         val.latency = 0;
         val.ts = bpf_ktime_get_ns();
+        val.pid = netdata_hardirq_pid();
         bpf_map_update_elem(&tbl_hardirq, &key, &val, BPF_ANY);
     }
 
@@ -86,9 +93,11 @@ int netdata_irq_ ##__type(struct netdata_irq_vectors_entry *ptr)              \
     valp = bpf_map_lookup_elem(&tbl_hardirq_static, &idx);                    \
     if (valp) {                                                               \
         valp->ts = bpf_ktime_get_ns();                                        \
+        valp->pid = netdata_hardirq_pid();                                    \
     } else {                                                                  \
         val.latency = 0;                                                      \
         val.ts = bpf_ktime_get_ns();                                          \
+        val.pid = netdata_hardirq_pid();                                      \
         bpf_map_update_elem(&tbl_hardirq_static, &idx, &val, BPF_ANY);        \
     }                                                                         \
                                                                               \
@@ -236,4 +245,3 @@ HARDIRQ_STATIC_GEN_EXIT(
 )
 
 char _license[] SEC("license") = "GPL";
-

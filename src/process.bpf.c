@@ -40,25 +40,16 @@ struct {
 
 static __always_inline void netdata_fill_common_process_data(struct netdata_pid_stat_t *data)
 {
-    data->ct = bpf_ktime_get_ns();
-    bpf_get_current_comm(&data->name, TASK_COMM_LEN);
-
     __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 tgid = (__u32)( 0x00000000FFFFFFFF & pid_tgid);
-    __u32 pid = (0xFFFFFFFF00000000 & pid_tgid)>>32;
+    __u32 tgid = (__u32)(pid_tgid >> 32);
+    __u32 pid = (__u32)pid_tgid;
+
+    data->ct = bpf_ktime_get_ns();
+    libnetdata_update_uid_gid(&data->uid, &data->gid);
+    bpf_get_current_comm(&data->name, TASK_COMM_LEN);
 
     data->tgid = tgid;
     data->pid = pid;
-}
-
-static __always_inline int netdata_process_not_update_apps()
-{
-    __u32 key = NETDATA_CONTROLLER_APPS_ENABLED;
-    __u32 *apps = bpf_map_lookup_elem(&process_ctrl ,&key);
-    if (apps && *apps)
-        return 0;
-
-    return 1;
 }
 
 
@@ -69,7 +60,7 @@ static __always_inline int netdata_common_release_task()
     __u32 tgid = 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_RELEASE_TASK, 1);
-    if (netdata_process_not_update_apps())
+    if (!monitor_apps(&process_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
@@ -93,7 +84,7 @@ static __always_inline int netdata_common_fork_clone(int ret)
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_ERROR_PROCESS, 1);
     } 
 
-    if (netdata_process_not_update_apps())
+    if (!monitor_apps(&process_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
@@ -133,7 +124,7 @@ static void netdata_tracepoint_common_sched_process_fork(int parent_pid, int chi
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
     }
 
-    if (netdata_process_not_update_apps())
+    if (!monitor_apps(&process_ctrl))
         return;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
@@ -172,7 +163,7 @@ int netdata_tracepoint_sched_process_exit(struct netdata_sched_process_exit *ptr
     __u32 tgid = 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_DO_EXIT, 1);
-    if (netdata_process_not_update_apps())
+    if (!monitor_apps(&process_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
@@ -193,9 +184,7 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     __u32 tgid = 0;
     // This is necessary, because it represents the main function to start a thread
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
-
-    libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_DO_EXIT, 1);
-    if (netdata_process_not_update_apps())
+    if (!monitor_apps(&process_ctrl))
         return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
@@ -316,4 +305,3 @@ int BPF_PROG(netdata_clone3_fexit, const struct pt_regs *regs)
 }
 
 char _license[] SEC("license") = "GPL";
-
