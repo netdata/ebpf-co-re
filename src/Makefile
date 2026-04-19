@@ -18,6 +18,7 @@ _LIBC ?= glibc
 
 APPS = cachestat \
        dc \
+       dns \
        disk \
        fd \
        filesystem \
@@ -34,6 +35,8 @@ APPS = cachestat \
        sync \
        vfs \
        #
+
+DNS_HELPER_OBJ = dns_tester_legacy.o
 
 all: compress
 
@@ -52,8 +55,14 @@ $(patsubst %,%.o,$(APPS)): %.o: %.skel.h
 %.o: %.c 
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-$(APPS): %: %.o
+$(filter-out dns,$(APPS)): %: %.o
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
+
+dns: dns.o $(DNS_HELPER_OBJ)
+	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
+
+$(DNS_HELPER_OBJ): ../kernel-collector/kernel/tester_dns.c libbpf
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
 compress: $(APPS)
 
