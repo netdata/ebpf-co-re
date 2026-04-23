@@ -61,7 +61,7 @@ $(filter-out dns,$(APPS)): %: %.o
 dns: dns.o $(DNS_HELPER_OBJ)
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
-$(DNS_HELPER_OBJ): ../kernel-collector/kernel/tester_dns.c libbpf
+$(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
 compress: $(APPS)
