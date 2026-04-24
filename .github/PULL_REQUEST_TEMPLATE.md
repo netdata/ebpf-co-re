@@ -19,8 +19,9 @@ helpful if there is no related issue.
 # git submodule update --init --recursive
 # make clean; make
 # ./src/tests/core_tester
+# ./src/tests/core_tester_go
 ```
-3. Verify the aggregate JSON summary and inspect any tester output emitted to stderr.
+3. Verify the aggregate JSON summary and inspect any tester output emitted to stderr for both aggregate runners.
 
 ##### Additional information
 
