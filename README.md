@@ -23,10 +23,10 @@ packages:
 - libelf headers
 - LLVM/Clang; this is because GCC prior to 10.0 cannot compile eBPF code.
 - `bpftool`: used to generate source codes.
+- Go: the default build also generates `src/tests/core_tester_go`.
 
 #### Initializing Submodules
 
 `libbpf` directory is included as a git submodule and it is necessary to fetch contents with the git command below:
 ```bash
 git submodule update --init --recursive
-
