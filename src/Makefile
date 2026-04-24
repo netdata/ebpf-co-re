@@ -36,9 +36,11 @@ APPS = cachestat \
        vfs \
        #
 
+AGGREGATE_TESTER = core_tester
+
 DNS_HELPER_OBJ = dns_tester_legacy.o
 
-all: compress
+all: compress $(OUTPUT)$(AGGREGATE_TESTER)
 
 libbpf:
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
@@ -65,6 +67,9 @@ $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
 compress: $(APPS)
+
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(APPS)
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz

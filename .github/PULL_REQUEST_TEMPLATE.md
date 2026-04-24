@@ -18,10 +18,9 @@ helpful if there is no related issue.
 ```sh
 # git submodule update --init --recursive
 # make clean; make
-# cd src/tests
-# sh run_tests.sh
+# ./src/tests/core_tester
 ```
-3. Verify that you do not have any `libbpf` error inside `error.log`.
+3. Verify the aggregate JSON summary and inspect any tester output emitted to stderr.
 
 ##### Additional information
 

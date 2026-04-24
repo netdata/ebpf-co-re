@@ -53,6 +53,19 @@ By default `eBPF CO-RE` code needs a header generated with the following `bpftoo
 
 When all compilation is finished, the `skel.c` files are stored inside `includes/` directory. These are the files used with [eBPF.plugin](https://github.com/netdata/netdata/tree/master/collectors/ebpf.plugin).
 
+## Running CO-RE tests
+
+After `make`, the per-module CO-RE testers and the aggregate CO-RE tester are stored under `src/tests/`.
+
+```sh
+cd src/tests
+./core_tester
+```
+
+The aggregate tester executes the existing CO-RE module testers, checks that the matching `includes/*.skel.h` artifacts exist, and writes a JSON summary to stdout. Use `./core_tester --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, and `--iteration`.
+
+`./core_tester --all` runs all non-filesystem CO-RE tests and expands each selected module across every mode that tester supports.
+
 ### Skel code division
 
 Inside these headers we have:
@@ -64,4 +77,3 @@ Inside these headers we have:
    - `NAME_bpf__attach`: Attach `CO-RE` code to targets that can be `trampolines`, and `tracepoints`. For probes it is preferred to use `bpf_program__attach_kprobe`.
       Anything that we want to modify in the code needs to be done before to call it.
    - `NAME_bpf__destroy`: function that unloads the `CO-RE` code
-
