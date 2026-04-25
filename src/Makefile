@@ -39,6 +39,9 @@ APPS = cachestat \
 AGGREGATE_TESTER = core_tester
 AGGREGATE_TESTER_GO = core_tester_go
 GO ?= go
+GO_EMBED_DIR = embedded/includes
+GO_EMBED_STAMP = $(GO_EMBED_DIR)/.stamp
+AGGREGATE_APP_OBJECTS = $(patsubst %,aggregate/%.o,$(APPS))
 
 DNS_HELPER_OBJ = dns_tester_legacy.o
 
@@ -70,10 +73,20 @@ $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 
 compress: $(APPS)
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(APPS)
-	$(CC) $(CFLAGS) -o $@ $<
+aggregate/%.o: %.c %.skel.h
+	mkdir -p aggregate
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -Dmain=netdata_$*_entry -c $< -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): core_tester.go
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
+
+$(GO_EMBED_STAMP): compress
+	mkdir -p $(GO_EMBED_DIR)
+	rm -f $(GO_EMBED_DIR)/*.skel.h
+	cp ../includes/*.skel.h $(GO_EMBED_DIR)/
+	touch $@
+
+$(OUTPUT)$(AGGREGATE_TESTER_GO): core_tester.go $(GO_EMBED_STAMP)
 	$(GO) build -o $@ $<
 
 clean:
@@ -82,3 +95,5 @@ clean:
 	cd $(LIBBPF)/src/ && make clean
 	cd $(OUTPUT) && find . -type f ! -name '*.sh' ! -name '.git*'  -delete
 	rm -f *.o 
+	rm -rf aggregate
+	rm -rf embedded

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,13 +82,15 @@ type aggregateResult struct {
 
 type aggregateState struct {
 	testsDir          string
-	includesDir       string
 	dnsPorts          string
 	dnsIterations     string
 	selectedPID       int
 	selectionMask     uint64
 	explicitSelection bool
 }
+
+//go:embed embedded/includes/*.skel.h
+var embeddedSkels embed.FS
 
 var aggregateTests = []aggregateTestCase{
 	{name: "cachestat", binary: "cachestat", skel: "cachestat.skel.h", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
@@ -154,13 +157,6 @@ func resolveSelfPaths(state *aggregateState, overrideTestsDir string) error {
 		state.testsDir = filepath.Dir(selfPath)
 	}
 
-	repoRoot := filepath.Dir(filepath.Dir(state.testsDir))
-	includesDir, err := joinPath(repoRoot, "includes")
-	if err != nil {
-		return err
-	}
-
-	state.includesDir = includesDir
 	return nil
 }
 
@@ -269,10 +265,6 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	_, _ = io.WriteString(out, "\n    }")
 }
 
-func pathExists(path string) bool {
-	return syscall.Access(path, 0) == nil
-}
-
 func pathExecutable(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -280,6 +272,19 @@ func pathExecutable(path string) bool {
 	}
 
 	return !info.IsDir() && info.Mode().Perm()&0111 != 0
+}
+
+func embeddedSkelExists(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	file, err := embeddedSkels.Open("embedded/includes/" + name)
+	if err != nil {
+		return false
+	}
+
+	return file.Close() == nil
 }
 
 func recordUnavailable(test aggregateTestCase, detail string) aggregateResult {
@@ -612,16 +617,7 @@ func main() {
 			continue
 		}
 
-		skelPath, err := joinPath(state.includesDir, test.skel)
-		if err != nil {
-			result := recordUnavailable(test, "Skeleton path is too long.")
-			writeResult(report, result, &first)
-			resultCount++
-			unavailable++
-			continue
-		}
-
-		if !pathExists(skelPath) {
+		if !embeddedSkelExists(test.skel) {
 			result := recordUnavailable(test, fmt.Sprintf("Missing CO-RE artifact %s.", test.skel))
 			writeResult(report, result, &first)
 			resultCount++

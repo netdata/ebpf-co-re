@@ -2,14 +2,12 @@
 
 #include <errno.h>
 #include <getopt.h>
-#include <limits.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #define MODE_NONE        0U
@@ -44,7 +42,6 @@ enum selection_bits {
     SELECT_XFS           = 1ULL << 20,
     SELECT_ZFS           = 1ULL << 21,
     SELECT_FILESYSTEM    = SELECT_NFS | SELECT_EXT4 | SELECT_BTRFS | SELECT_XFS,
-    SELECT_ANY_FILESYSTEM = SELECT_FILESYSTEM | SELECT_ZFS,
     SELECT_ALL_NON_FILESYSTEM = SELECT_CACHESTAT | SELECT_DC | SELECT_DISK | SELECT_DNS |
                                 SELECT_FD | SELECT_HARDIRQ | SELECT_MDFLUSH | SELECT_MOUNT |
                                 SELECT_NETWORKVIEWER | SELECT_OOMKILL | SELECT_PROCESS |
@@ -84,10 +81,12 @@ enum option_ids {
     OPT_ZFS
 };
 
+typedef int (*aggregate_entrypoint_t)(int argc, char **argv);
+
 typedef struct aggregate_test_case {
     const char *name;
     const char *binary;
-    const char *skel;
+    aggregate_entrypoint_t entrypoint;
     const char *extra_arg;
     const char *unavailable_reason;
     uint64_t selection_bit;
@@ -108,8 +107,6 @@ typedef struct aggregate_result {
 } aggregate_result_t;
 
 typedef struct aggregate_state {
-    char tests_dir[PATH_MAX];
-    char includes_dir[PATH_MAX];
     const char *dns_ports;
     const char *dns_iterations;
     int selected_pid;
@@ -117,50 +114,69 @@ typedef struct aggregate_state {
     int explicit_selection;
 } aggregate_state_t;
 
+int netdata_cachestat_entry(int argc, char **argv);
+int netdata_dc_entry(int argc, char **argv);
+int netdata_disk_entry(int argc, char **argv);
+int netdata_dns_entry(int argc, char **argv);
+int netdata_fd_entry(int argc, char **argv);
+int netdata_filesystem_entry(int argc, char **argv);
+int netdata_hardirq_entry(int argc, char **argv);
+int netdata_mdflush_entry(int argc, char **argv);
+int netdata_mount_entry(int argc, char **argv);
+int netdata_networkviewer_entry(int argc, char **argv);
+int netdata_oomkill_entry(int argc, char **argv);
+int netdata_process_entry(int argc, char **argv);
+int netdata_shm_entry(int argc, char **argv);
+int netdata_socket_entry(int argc, char **argv);
+int netdata_softirq_entry(int argc, char **argv);
+int netdata_swap_entry(int argc, char **argv);
+int netdata_sync_entry(int argc, char **argv);
+int netdata_vfs_entry(int argc, char **argv);
+
 static const aggregate_test_case_t aggregate_tests[] = {
-    { "cachestat", "cachestat", "cachestat.skel.h", NULL, NULL, SELECT_CACHESTAT,
+    { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "dc", "dc", "dc.skel.h", NULL, NULL, SELECT_DC,
+    { "dc", "dc", netdata_dc_entry, NULL, NULL, SELECT_DC,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "disk", "disk", "disk.skel.h", NULL, NULL, SELECT_DISK,
+    { "disk", "disk", netdata_disk_entry, NULL, NULL, SELECT_DISK,
       MODE_NONE, 0, 0 },
-    { "dns", "dns", "dns.skel.h", NULL, NULL, SELECT_DNS,
+    { "dns", "dns", netdata_dns_entry, NULL, NULL, SELECT_DNS,
       MODE_NONE, 0, 0 },
-    { "fd", "fd", "fd.skel.h", NULL, NULL, SELECT_FD,
+    { "fd", "fd", netdata_fd_entry, NULL, NULL, SELECT_FD,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "hardirq", "hardirq", "hardirq.skel.h", NULL, NULL, SELECT_HARDIRQ,
+    { "hardirq", "hardirq", netdata_hardirq_entry, NULL, NULL, SELECT_HARDIRQ,
       MODE_NONE, 0, 0 },
-    { "mdflush", "mdflush", "mdflush.skel.h", NULL, NULL, SELECT_MDFLUSH,
+    { "mdflush", "mdflush", netdata_mdflush_entry, NULL, NULL, SELECT_MDFLUSH,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
-    { "mount", "mount", "mount.skel.h", NULL, NULL, SELECT_MOUNT,
+    { "mount", "mount", netdata_mount_entry, NULL, NULL, SELECT_MOUNT,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
-    { "networkviewer", "networkviewer", "networkviewer.skel.h", NULL, NULL, SELECT_NETWORKVIEWER,
+    { "networkviewer", "networkviewer", netdata_networkviewer_entry, NULL, NULL, SELECT_NETWORKVIEWER,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "oomkill", "oomkill", "oomkill.skel.h", NULL, NULL, SELECT_OOMKILL,
+    { "oomkill", "oomkill", netdata_oomkill_entry, NULL, NULL, SELECT_OOMKILL,
       MODE_NONE, 0, 0 },
-    { "process", "process", "process.skel.h", NULL, NULL, SELECT_PROCESS,
+    { "process", "process", netdata_process_entry, NULL, NULL, SELECT_PROCESS,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "shm", "shm", "shm.skel.h", NULL, NULL, SELECT_SHM,
+    { "shm", "shm", netdata_shm_entry, NULL, NULL, SELECT_SHM,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "socket", "socket", "socket.skel.h", NULL, NULL, SELECT_SOCKET,
+    { "socket", "socket", netdata_socket_entry, NULL, NULL, SELECT_SOCKET,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "softirq", "softirq", "softirq.skel.h", NULL, NULL, SELECT_SOFTIRQ,
+    { "softirq", "softirq", netdata_softirq_entry, NULL, NULL, SELECT_SOFTIRQ,
       MODE_NONE, 0, 0 },
-    { "swap", "swap", "swap.skel.h", NULL, NULL, SELECT_SWAP,
+    { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "sync", "sync", "sync.skel.h", NULL, NULL, SELECT_SYNC,
+    { "sync", "sync", netdata_sync_entry, NULL, NULL, SELECT_SYNC,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
-    { "vfs", "vfs", "vfs.skel.h", NULL, NULL, SELECT_VFS,
+    { "vfs", "vfs", netdata_vfs_entry, NULL, NULL, SELECT_VFS,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
-    { "nfs", "filesystem", "filesystem.skel.h", "--nfs", NULL, SELECT_NFS,
+    { "nfs", "filesystem", netdata_filesystem_entry, "--nfs", NULL, SELECT_NFS,
       MODE_PROBE, 0, 0 },
-    { "ext4", "filesystem", "filesystem.skel.h", "--ext4", NULL, SELECT_EXT4,
+    { "ext4", "filesystem", netdata_filesystem_entry, "--ext4", NULL, SELECT_EXT4,
       MODE_PROBE, 0, 0 },
-    { "btrfs", "filesystem", "filesystem.skel.h", "--btrfs", NULL, SELECT_BTRFS,
+    { "btrfs", "filesystem", netdata_filesystem_entry, "--btrfs", NULL, SELECT_BTRFS,
       MODE_PROBE, 0, 0 },
-    { "xfs", "filesystem", "filesystem.skel.h", "--xfs", NULL, SELECT_XFS,
+    { "xfs", "filesystem", netdata_filesystem_entry, "--xfs", NULL, SELECT_XFS,
       MODE_PROBE, 0, 0 },
-    { "zfs", NULL, NULL, NULL, "No CO-RE skeleton or tester is generated for zfs in this repository.",
+    { "zfs", "zfs", NULL, NULL, "No CO-RE skeleton or tester is generated for zfs in this repository.",
       SELECT_ZFS, MODE_NONE, 0, 0 }
 };
 
@@ -179,59 +195,6 @@ static void append_format(char *buffer, size_t size, const char *format, ...)
     va_start(args, format);
     vsnprintf(buffer + used, size - used, format, args);
     va_end(args);
-}
-
-static void strip_last_component(char *path)
-{
-    char *slash = strrchr(path, '/');
-    if (!slash)
-        return;
-
-    if (slash == path) {
-        slash[1] = '\0';
-        return;
-    }
-
-    *slash = '\0';
-}
-
-static int join_path(char *buffer, size_t size, const char *left, const char *right)
-{
-    int written;
-
-    written = snprintf(buffer, size, "%s/%s", left, right);
-    if (written < 0 || (size_t)written >= size)
-        return -1;
-
-    return 0;
-}
-
-static int resolve_self_paths(aggregate_state_t *state, const char *override_tests_dir)
-{
-    char self_path[PATH_MAX];
-    ssize_t length;
-    char repo_root[PATH_MAX];
-
-    if (override_tests_dir) {
-        if (!realpath(override_tests_dir, state->tests_dir))
-            return -1;
-    } else {
-        length = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
-        if (length < 0)
-            return -1;
-
-        self_path[length] = '\0';
-        snprintf(state->tests_dir, sizeof(state->tests_dir), "%s", self_path);
-        strip_last_component(state->tests_dir);
-    }
-
-    snprintf(repo_root, sizeof(repo_root), "%s", state->tests_dir);
-    strip_last_component(repo_root);
-    strip_last_component(repo_root);
-    if (join_path(state->includes_dir, sizeof(state->includes_dir), repo_root, "includes"))
-        return -1;
-
-    return 0;
 }
 
 static const char *mode_name(unsigned mode)
@@ -268,34 +231,6 @@ static void init_result(aggregate_result_t *result, const aggregate_test_case_t 
     snprintf(result->name, sizeof(result->name), "%s", test->name);
     snprintf(result->binary, sizeof(result->binary), "%s", test->binary ? test->binary : "");
     result->pid = -1;
-    result->exit_code = 0;
-}
-
-static int run_child(char *const argv[])
-{
-    pid_t pid = fork();
-    int status = 0;
-
-    if (pid < 0)
-        return -errno;
-
-    if (pid == 0) {
-        dup2(STDERR_FILENO, STDOUT_FILENO);
-        execv(argv[0], argv);
-        perror("execv");
-        _exit(127);
-    }
-
-    if (waitpid(pid, &status, 0) < 0)
-        return -errno;
-
-    if (WIFEXITED(status))
-        return WEXITSTATUS(status);
-
-    if (WIFSIGNALED(status))
-        return 128 + WTERMSIG(status);
-
-    return 1;
 }
 
 static void json_write_string(FILE *out, const char *text)
@@ -356,23 +291,58 @@ static void write_result(FILE *out, const aggregate_result_t *result, int *first
     fprintf(out, "\n    }");
 }
 
-static int path_exists(const char *path)
-{
-    return access(path, F_OK) == 0;
-}
-
 static void record_unavailable(aggregate_result_t *result, const aggregate_test_case_t *test, const char *detail)
 {
     init_result(result, test);
     snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
     snprintf(result->detail, sizeof(result->detail), "%s", detail);
-    snprintf(result->command, sizeof(result->command), "%s", "");
+}
+
+static void reset_getopt_state(void)
+{
+    optind = 0;
+    opterr = 1;
+    optopt = 0;
+    optarg = NULL;
+}
+
+static int run_entry(aggregate_entrypoint_t entrypoint, int argc, char **argv)
+{
+    int saved_stdout;
+    int ret;
+
+    if (!entrypoint)
+        return 127;
+
+    fflush(stdout);
+    saved_stdout = dup(STDOUT_FILENO);
+    if (saved_stdout < 0)
+        return -errno;
+
+    if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
+        ret = -errno;
+        close(saved_stdout);
+        return ret;
+    }
+
+    reset_getopt_state();
+    ret = entrypoint(argc, argv);
+    fflush(stdout);
+
+    if (dup2(saved_stdout, STDOUT_FILENO) < 0) {
+        int restore_err = -errno;
+        close(saved_stdout);
+        return restore_err;
+    }
+
+    close(saved_stdout);
+    return ret;
 }
 
 static int execute_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
                         unsigned mode, int pid, aggregate_result_t *result)
 {
-    char binary_path[PATH_MAX];
+    char pid_buffer[16];
     char *argv[12];
     int argc = 0;
     int exit_code;
@@ -380,19 +350,11 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
     init_result(result, test);
     if (mode != MODE_NONE)
         snprintf(result->mode, sizeof(result->mode), "%s", mode_name(mode));
-    else
-        snprintf(result->mode, sizeof(result->mode), "%s", "");
 
     if (pid >= 0)
         result->pid = pid;
 
-    if (join_path(binary_path, sizeof(binary_path), state->tests_dir, test->binary)) {
-        snprintf(result->status, sizeof(result->status), "%s", "Fail");
-        snprintf(result->detail, sizeof(result->detail), "%s", "Binary path is too long.");
-        result->exit_code = 1;
-        return 1;
-    }
-    argv[argc++] = binary_path;
+    argv[argc++] = (char *)test->binary;
 
     if (test->emit_mode_arg && mode != MODE_NONE)
         argv[argc++] = (char *)mode_arg(mode);
@@ -413,7 +375,6 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
     }
 
     if (pid >= 0) {
-        static char pid_buffer[16];
         snprintf(pid_buffer, sizeof(pid_buffer), "%d", pid);
         argv[argc++] = "--pid";
         argv[argc++] = pid_buffer;
@@ -421,7 +382,7 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
 
     argv[argc] = NULL;
 
-    append_format(result->command, sizeof(result->command), "%s", binary_path);
+    append_format(result->command, sizeof(result->command), "%s", test->binary);
     if (test->emit_mode_arg && mode != MODE_NONE)
         append_format(result->command, sizeof(result->command), " %s", mode_arg(mode));
     if (test->extra_arg)
@@ -436,7 +397,7 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
         append_format(result->command, sizeof(result->command), " --pid %d", pid);
 
     fprintf(stderr, "Running %s\n", result->command);
-    exit_code = run_child(argv);
+    exit_code = run_entry(test->entrypoint, argc, argv);
     result->exit_code = exit_code;
     if (!exit_code) {
         snprintf(result->status, sizeof(result->status), "%s", "Success");
@@ -452,14 +413,14 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
 static void print_help(const char *name)
 {
     fprintf(stdout,
-            "%s runs the CO-RE testers built in src/tests and aggregates their results.\n\n"
+            "%s runs the CO-RE tests in-process and aggregates their results.\n\n"
             "Options:\n"
             "  --help            Print this help.\n"
             "  --all             Run all non-filesystem CO-RE tests. This is the default.\n"
             "  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"
             "  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"
             "  --iteration N     Forward the capture iteration count to the DNS tester.\n"
-            "  --tests-dir PATH  Override the directory that contains the compiled test binaries.\n"
+            "  --tests-dir PATH  Accepted for compatibility and ignored in standalone mode.\n"
             "  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"
             "\n"
             "Selectors:\n"
@@ -513,7 +474,6 @@ int main(int argc, char **argv)
 
     aggregate_state_t state = { .selected_pid = -1 };
     aggregate_result_t results[192];
-    const char *tests_dir_override = NULL;
     const char *log_path = NULL;
     FILE *report = stdout;
     int option_index = 0;
@@ -546,7 +506,6 @@ int main(int argc, char **argv)
                 state.dns_iterations = optarg;
                 break;
             case OPT_TESTS_DIR:
-                tests_dir_override = optarg;
                 break;
             case OPT_LOG_PATH:
                 log_path = optarg;
@@ -657,11 +616,6 @@ int main(int argc, char **argv)
         state.explicit_selection = 1;
     }
 
-    if (resolve_self_paths(&state, tests_dir_override)) {
-        perror("Cannot resolve tester paths");
-        return 1;
-    }
-
     if (log_path) {
         report = fopen(log_path, "w");
         if (!report) {
@@ -674,8 +628,6 @@ int main(int argc, char **argv)
 
     for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
         const aggregate_test_case_t *test = &aggregate_tests[i];
-        char skel_path[PATH_MAX];
-        char binary_path[PATH_MAX];
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;
@@ -688,34 +640,8 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (join_path(skel_path, sizeof(skel_path), state.includes_dir, test->skel)) {
-            record_unavailable(&results[result_count], test, "Skeleton path is too long.");
-            write_result(report, &results[result_count], &first);
-            result_count++;
-            unavailable++;
-            continue;
-        }
-        if (!path_exists(skel_path)) {
-            char detail[256];
-            snprintf(detail, sizeof(detail), "Missing CO-RE artifact %s.", test->skel);
-            record_unavailable(&results[result_count], test, detail);
-            write_result(report, &results[result_count], &first);
-            result_count++;
-            unavailable++;
-            continue;
-        }
-
-        if (join_path(binary_path, sizeof(binary_path), state.tests_dir, test->binary)) {
-            record_unavailable(&results[result_count], test, "Binary path is too long.");
-            write_result(report, &results[result_count], &first);
-            result_count++;
-            unavailable++;
-            continue;
-        }
-        if (access(binary_path, X_OK)) {
-            char detail[256];
-            snprintf(detail, sizeof(detail), "Missing compiled tester %s.", test->binary);
-            record_unavailable(&results[result_count], test, detail);
+        if (!test->entrypoint) {
+            record_unavailable(&results[result_count], test, "Standalone entrypoint is not available.");
             write_result(report, &results[result_count], &first);
             result_count++;
             unavailable++;

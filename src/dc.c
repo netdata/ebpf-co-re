@@ -15,7 +15,7 @@
 
 #include "dc.skel.h"
 
-char *function_list[] = { "lookup_fast",
+static char *function_list[] = { "lookup_fast",
                           "d_lookup"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
@@ -268,4 +268,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
