@@ -42,6 +42,8 @@ GO ?= go
 GO_EMBED_DIR = embedded/includes
 GO_EMBED_STAMP = $(GO_EMBED_DIR)/.stamp
 AGGREGATE_APP_OBJECTS = $(patsubst %,aggregate/%.o,$(APPS))
+LOADER_OBJ = netdata_core_loader.o
+AGGREGATE_LIB = aggregate/libnetdata_tests.a
 
 DNS_HELPER_OBJ = dns_tester_legacy.o
 
@@ -77,8 +79,14 @@ aggregate/%.o: %.c %.skel.h
 	mkdir -p aggregate
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -Dmain=netdata_$*_entry -c $< -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
-	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
+$(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
+
+$(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
+	ar rcs $@ $^
+
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
 $(GO_EMBED_STAMP): compress
 	mkdir -p $(GO_EMBED_DIR)
@@ -86,8 +94,11 @@ $(GO_EMBED_STAMP): compress
 	cp ../includes/*.skel.h $(GO_EMBED_DIR)/
 	touch $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): core_tester.go $(GO_EMBED_STAMP)
-	$(GO) build -o $@ $<
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) core_tester_go/core_tester.go
+	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
+	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \
+	$(GO) build -o $@ core_tester_go/core_tester.go
 
 clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz

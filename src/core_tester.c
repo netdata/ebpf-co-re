@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 
-#include <errno.h>
 #include <getopt.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -9,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "netdata_core_loader.h"
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -81,7 +82,7 @@ enum option_ids {
     OPT_ZFS
 };
 
-typedef int (*aggregate_entrypoint_t)(int argc, char **argv);
+typedef netdata_loader_fn_t aggregate_entrypoint_t;
 
 typedef struct aggregate_test_case {
     const char *name;
@@ -113,25 +114,6 @@ typedef struct aggregate_state {
     uint64_t selection_mask;
     int explicit_selection;
 } aggregate_state_t;
-
-int netdata_cachestat_entry(int argc, char **argv);
-int netdata_dc_entry(int argc, char **argv);
-int netdata_disk_entry(int argc, char **argv);
-int netdata_dns_entry(int argc, char **argv);
-int netdata_fd_entry(int argc, char **argv);
-int netdata_filesystem_entry(int argc, char **argv);
-int netdata_hardirq_entry(int argc, char **argv);
-int netdata_mdflush_entry(int argc, char **argv);
-int netdata_mount_entry(int argc, char **argv);
-int netdata_networkviewer_entry(int argc, char **argv);
-int netdata_oomkill_entry(int argc, char **argv);
-int netdata_process_entry(int argc, char **argv);
-int netdata_shm_entry(int argc, char **argv);
-int netdata_socket_entry(int argc, char **argv);
-int netdata_softirq_entry(int argc, char **argv);
-int netdata_swap_entry(int argc, char **argv);
-int netdata_sync_entry(int argc, char **argv);
-int netdata_vfs_entry(int argc, char **argv);
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
@@ -298,47 +280,6 @@ static void record_unavailable(aggregate_result_t *result, const aggregate_test_
     snprintf(result->detail, sizeof(result->detail), "%s", detail);
 }
 
-static void reset_getopt_state(void)
-{
-    optind = 0;
-    opterr = 1;
-    optopt = 0;
-    optarg = NULL;
-}
-
-static int run_entry(aggregate_entrypoint_t entrypoint, int argc, char **argv)
-{
-    int saved_stdout;
-    int ret;
-
-    if (!entrypoint)
-        return 127;
-
-    fflush(stdout);
-    saved_stdout = dup(STDOUT_FILENO);
-    if (saved_stdout < 0)
-        return -errno;
-
-    if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
-        ret = -errno;
-        close(saved_stdout);
-        return ret;
-    }
-
-    reset_getopt_state();
-    ret = entrypoint(argc, argv);
-    fflush(stdout);
-
-    if (dup2(saved_stdout, STDOUT_FILENO) < 0) {
-        int restore_err = -errno;
-        close(saved_stdout);
-        return restore_err;
-    }
-
-    close(saved_stdout);
-    return ret;
-}
-
 static int execute_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
                         unsigned mode, int pid, aggregate_result_t *result)
 {
@@ -397,7 +338,7 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
         append_format(result->command, sizeof(result->command), " --pid %d", pid);
 
     fprintf(stderr, "Running %s\n", result->command);
-    exit_code = run_entry(test->entrypoint, argc, argv);
+    exit_code = netdata_run_fn(test->entrypoint, argc, argv);
     result->exit_code = exit_code;
     if (!exit_code) {
         snprintf(result->status, sizeof(result->status), "%s", "Success");
