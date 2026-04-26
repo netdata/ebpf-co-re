@@ -15,14 +15,14 @@
 
 #include "vfs.skel.h"
 
-char *function_list[] = { "vfs_write",
-                          "vfs_writev",
-                          "vfs_read",
-                          "vfs_readv",
-                          "vfs_unlink",
-                          "vfs_fsync",
-                          "vfs_open",
-                          "vfs_create"
+static char *function_list[] = { "vfs_write",
+                                 "vfs_writev",
+                                 "vfs_read",
+                                 "vfs_readv",
+                                 "vfs_unlink",
+                                 "vfs_fsync",
+                                 "vfs_open",
+                                 "vfs_create"
 };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_VFS_RELEASE_TASK 8
@@ -439,4 +439,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

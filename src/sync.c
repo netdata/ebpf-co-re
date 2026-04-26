@@ -36,7 +36,7 @@ static char *ebpf_sync_syscall[] = {
     "__x64_sys_sync"
 };
 
-char *filename = { "useless_data.txt" };
+static const char *filename;
 
 /****************************************************************************************
  *
@@ -454,6 +454,15 @@ int main(int argc, char **argv)
 
     libbpf_set_print(netdata_libbpf_vfprintf);
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+
+    char filename_buffer[] = "/tmp/netdata-sync-XXXXXX";
+    int temp_fd = mkstemp(filename_buffer);
+    if (temp_fd < 0) {
+        perror("Cannot create temporary file");
+        return 1;
+    }
+    close(temp_fd);
+    filename = filename_buffer;
     
     struct btf *bf = NULL;
     if (!selector) {
@@ -481,8 +490,8 @@ int main(int argc, char **argv)
     if (bf)
         btf__free(bf);
 
-    unlink(filename);
+    unlink(filename_buffer);
+    filename = NULL;
 
     return ret;
 }
-

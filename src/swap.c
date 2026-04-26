@@ -39,8 +39,8 @@ static ebpf_specify_name_t swap_names[] = { {.program_name = "netdata_swap_read_
                                                  {.program_name = NULL}};
 
 
-char *function_list[] = { NULL, // Filled after to discover available functions
-                          NULL };
+static char *function_list[] = { NULL, // Filled after to discover available functions
+                                 NULL };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_SWAP_RELEASE_TASK 2
 
@@ -210,7 +210,7 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
     return 2;
 }
 
-int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
+static int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 {
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
     if (ebpf_nprocs < 0)
@@ -361,4 +361,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

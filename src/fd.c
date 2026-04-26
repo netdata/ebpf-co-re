@@ -42,7 +42,7 @@ static ebpf_specify_name_t open_names[] = { {.program_name = "netdata_sys_open_k
                                               .retprobe = 0},
                                              {.program_name = NULL}};
 
-char *function_list[] = { NULL,
+static char *function_list[] = { NULL,
                           NULL
                         };
 // This preprocessor is defined here, because it is not useful in kernel-colector
@@ -388,4 +388,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

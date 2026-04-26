@@ -36,9 +36,27 @@ struct {
 
 
 /************************************************************************************
- *     
- *                                 DISK SECTION
- *     
+ *
+ *                                 Helper Functions
+ *
+ ***********************************************************************************/
+
+static __always_inline netdata_disk_key_t netdata_disk_key(void *ptr)
+{
+    struct netdata_block_rq_issue *issue = ptr;
+    netdata_disk_key_t key = {
+        .dev = issue->dev,
+        .pad = 0,
+        .sector = (issue->sector < 0) ? 0 : issue->sector
+    };
+
+    return key;
+}
+
+/************************************************************************************
+ *
+ *                                 Tracepoints
+ *
  ***********************************************************************************/
 
 SEC("tracepoint/block/block_rq_issue")
@@ -48,12 +66,7 @@ int netdata_block_rq_issue(struct netdata_block_rq_issue *ptr)
     if (!ptr->dev)
         return 0;
 
-    netdata_disk_key_t key = {};
-    key.dev = ptr->dev;
-    key.sector = ptr->sector;
-
-    if (key.sector < 0)
-        key.sector = 0;
+    netdata_disk_key_t key = netdata_disk_key(ptr);
 
     __u64 value = bpf_ktime_get_ns();
 
@@ -67,35 +80,26 @@ int netdata_block_rq_issue(struct netdata_block_rq_issue *ptr)
 SEC("tracepoint/block/block_rq_complete")
 int netdata_block_rq_complete(struct netdata_block_rq_complete *ptr)
 {
-    __u64 *fill;
-    netdata_disk_key_t key = {};
-    block_key_t blk = {};
-    key.dev = ptr->dev;
-    key.sector = ptr->sector;
-
-    if (key.sector < 0)
-        key.sector = 0;
-
-    fill = bpf_map_lookup_elem(&tmp_disk_tp_stat ,&key);
+    netdata_disk_key_t key = netdata_disk_key(ptr);
+    __u64 *fill = bpf_map_lookup_elem(&tmp_disk_tp_stat, &key);
     if (!fill)
         return 0;
 
     // calculate and convert to microsecond
-    u64 curr = bpf_ktime_get_ns();
-    __u64 data, *update;
-    curr -= *fill;
+    __u64 curr = bpf_ktime_get_ns() - *fill;
     curr /= 1000;
 
-    blk.bin = libnetdata_select_idx(curr, NETDATA_FS_MAX_BINS_POS);
-    blk.dev = netdata_new_encode_dev(ptr->dev);
+    block_key_t blk = {
+        .bin = libnetdata_select_idx(curr, NETDATA_FS_MAX_BINS_POS),
+        .dev = netdata_new_encode_dev(ptr->dev)
+    };
 
     // Update IOPS
-    update = bpf_map_lookup_elem(&tbl_disk_iocall ,&blk);
+    __u64 *update = bpf_map_lookup_elem(&tbl_disk_iocall, &blk);
     if (update) {
         libnetdata_update_u64(update, 1);
     } else {
-        data = 1;
-        bpf_map_update_elem(&tbl_disk_iocall, &blk, &data, BPF_ANY);
+        bpf_map_update_elem(&tbl_disk_iocall, &blk, &(__u64){1}, BPF_ANY);
     }
 
     bpf_map_delete_elem(&tmp_disk_tp_stat, &key);
@@ -106,4 +110,3 @@ int netdata_block_rq_complete(struct netdata_block_rq_complete *ptr)
 }
 
 char _license[] SEC("license") = "GPL";
-

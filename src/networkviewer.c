@@ -19,16 +19,16 @@
 #include "networkviewer.skel.h"
 
 // Socket functions
-char *function_list[] = { "inet_csk_accept",
-                          "tcp_retransmit_skb",
-                          "tcp_cleanup_rbuf",
-                          "tcp_close",
-                          "udp_recvmsg",
-                          "tcp_sendmsg",
-                          "udp_sendmsg",
-                          "tcp_v4_connect",
-                          "tcp_v6_connect",
-                          "tcp_set_state"};
+static char *function_list[] = { "inet_csk_accept",
+                                 "tcp_retransmit_skb",
+                                 "tcp_cleanup_rbuf",
+                                 "tcp_close",
+                                 "udp_recvmsg",
+                                 "tcp_sendmsg",
+                                 "udp_sendmsg",
+                                 "tcp_v4_connect",
+                                 "tcp_v6_connect",
+                                 "tcp_set_state"};
 
 #define NETDATA_IPV4 4
 #define NETDATA_IPV6 6
@@ -221,7 +221,7 @@ static int netdata_read_socket(struct networkviewer_bpf *obj, int ebpf_nprocs)
 }
 
 
-int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
+static int ebpf_networkviewer_tests(int selector, enum netdata_apps_level map_level)
 {
     struct networkviewer_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -347,4 +347,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

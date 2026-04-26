@@ -21,7 +21,7 @@ enum netdata_md_function_list {
     NETDATA_MD_END
 };
 
-char *function_list[] = { "md_flush_request" };
+static char *function_list[] = { "md_flush_request" };
 
 static inline void ebpf_disable_probes(struct mdflush_bpf *obj)
 {
@@ -195,4 +195,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

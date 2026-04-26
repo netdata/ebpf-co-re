@@ -168,17 +168,7 @@ static inline int netdata_libbpf_vfprintf(enum libbpf_print_level level, const c
     if (level == LIBBPF_DEBUG)
         return 0;
 
-    static FILE *libbpf_err = NULL;
-    if (!libbpf_err)  {
-        libbpf_err = fopen("libbpf.log", "a");
-        if (!libbpf_err) {
-            fprintf(stderr, "Cannot open libbpf.log");
-            exit(1);
-        }
-    }
-
-    return vfprintf(libbpf_err, format, args);
+    return vfprintf(stderr, format, args);
 }
 
 #endif /* _NETDATA_CORE_COMMON_H_ */
-
