@@ -30,27 +30,43 @@ static inline int ebpf_load_and_attach(struct oomkill_bpf *obj)
     return ret;
 }
 
-static void ebpf_update_table(int global)
+static void ebpf_update_table(int global, int ebpf_nprocs)
 {
     int idx = 0;
-    unsigned char value = 'a';
-    int ret = bpf_map_update_elem(global, &idx, &value, 0);
+    // PERCPU_HASH requires num_cpus * roundup(value_size, 8) bytes
+    uint64_t *per_cpu = calloc(ebpf_nprocs, sizeof(uint64_t));
+    if (!per_cpu) {
+        fprintf(stderr, "Cannot allocate per-cpu buffer.");
+        return;
+    }
+
+    int i;
+    for (i = 0; i < ebpf_nprocs; i++)
+        ((unsigned char *)per_cpu)[i * sizeof(uint64_t)] = 1;
+
+    int ret = bpf_map_update_elem(global, &idx, per_cpu, 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to global table.");
+
+    free(per_cpu);
 }
 
 static int oomkill_read_array(int fd, int ebpf_nprocs)
 {
-    unsigned char stored[ebpf_nprocs];
+    // PERCPU_HASH requires num_cpus * roundup(value_size, 8) bytes
+    uint64_t *per_cpu = calloc(ebpf_nprocs, sizeof(uint64_t));
+    if (!per_cpu)
+        return 2;
 
     unsigned char counter = 0;
     int idx = 0;
-    if (!bpf_map_lookup_elem(fd, &idx, stored)) {
+    if (!bpf_map_lookup_elem(fd, &idx, per_cpu)) {
         int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += stored[j];
-        }
+        for (j = 0; j < ebpf_nprocs; j++)
+            counter += ((unsigned char *)per_cpu)[j * sizeof(uint64_t)];
     }
+
+    free(per_cpu);
 
     if (counter) {
         fprintf(stdout, "Data stored with success\n");
@@ -77,7 +93,7 @@ static int ebpf_oomkill_tests()
     int ret = ebpf_load_and_attach(obj);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.tbl_oomkill);
-        ebpf_update_table(fd);
+        ebpf_update_table(fd, ebpf_nprocs);
 
         ret = oomkill_read_array(fd, ebpf_nprocs);
         if (ret)

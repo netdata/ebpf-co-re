@@ -212,9 +212,8 @@ int main(int argc, char **argv)
                           break;
                       }
             case NETDATA_EBPF_CORE_IDX_TRACEPOINT: {
-                          selector = NETDATA_MODE_PROBE;
-                          fprintf(stdout, "This specific software does not have tracepoint, using kprobe instead\n");
-                          break;
+                          fprintf(stdout, "This specific software does not have tracepoint.\n");
+                          return 0;
                       }
             case NETDATA_EBPF_CORE_IDX_TRAMPOLINE: {
                           selector = NETDATA_MODE_TRAMPOLINE;
@@ -265,6 +264,8 @@ int main(int argc, char **argv)
     }
 
     free(lookup_fast);
+    // Restore the static pointer so repeated in-process calls don't use freed memory.
+    function_list[NETDATA_LOOKUP_FAST] = "lookup_fast";
 
     return 0;
 }
