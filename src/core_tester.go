@@ -654,6 +654,16 @@ func main() {
 
 		orderedModes := []uint{modeProbe, modeTracepoint, modeTrampoline}
 		for _, mode := range orderedModes {
+			if mode == modeTracepoint && test.modes&modeTracepoint == 0 {
+				result := initResult(test)
+				result.status = "Success"
+				result.detail = "tracepoint is not available on this system, cannot proceed"
+				writeResult(report, result, &first)
+				resultCount++
+				unavailable++
+				break
+			}
+
 			if test.modes&mode == 0 {
 				continue
 			}

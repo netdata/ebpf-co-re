@@ -601,11 +601,23 @@ int main(int argc, char **argv)
             size_t j;
             for (j = 0; j < sizeof(ordered_modes) / sizeof(ordered_modes[0]); j++) {
                 unsigned mode = ordered_modes[j];
-                int pid_start = -1;
-                int pid_end = -1;
+
+                if (mode == MODE_TRACEPOINT && !(test->modes & MODE_TRACEPOINT)) {
+                    init_result(&results[result_count], test);
+                    snprintf(results[result_count].status, sizeof(results[result_count].status), "%s", "Success");
+                    snprintf(results[result_count].detail, sizeof(results[result_count].detail),
+                             "tracepoint is not available on this system, cannot proceed");
+                    write_result(report, &results[result_count], &first);
+                    result_count++;
+                    unavailable++;
+                    break;
+                }
 
                 if (!(test->modes & mode))
                     continue;
+
+                int pid_start = -1;
+                int pid_end = -1;
 
                 if (test->pid_supported) {
                     if (state.selected_pid >= 0) {
