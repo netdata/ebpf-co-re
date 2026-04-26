@@ -39,8 +39,6 @@ APPS = cachestat \
 AGGREGATE_TESTER = core_tester
 AGGREGATE_TESTER_GO = core_tester_go
 GO ?= go
-GO_EMBED_DIR = embedded/includes
-GO_EMBED_STAMP = $(GO_EMBED_DIR)/.stamp
 AGGREGATE_APP_OBJECTS = $(patsubst %,aggregate/%.o,$(APPS))
 LOADER_OBJ = netdata_core_loader.o
 AGGREGATE_LIB = aggregate/libnetdata_tests.a
@@ -88,13 +86,7 @@ $(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
 $(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
-$(GO_EMBED_STAMP): compress
-	mkdir -p $(GO_EMBED_DIR)
-	rm -f $(GO_EMBED_DIR)/*.skel.h
-	cp ../includes/*.skel.h $(GO_EMBED_DIR)/
-	touch $@
-
-$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) core_tester_go/core_tester.go
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(wildcard core_tester_go/*.go)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
 	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \

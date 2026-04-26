@@ -55,7 +55,7 @@ When all compilation is finished, the `skel.c` files are stored inside `includes
 
 ## Running CO-RE tests
 
-After `make`, the per-module CO-RE testers, the aggregate C tester, and the parallel aggregate Go tester are stored under `src/tests/`.
+After `make`, the per-module CO-RE testers, the aggregate C tester, and the aggregate Go tester are stored under `src/tests/`.
 
 ```sh
 cd src/tests
@@ -63,9 +63,9 @@ cd src/tests
 ./core_tester_go
 ```
 
-The aggregate tester executes the existing CO-RE module testers, checks that the matching `includes/*.skel.h` artifacts exist, and writes a JSON summary to stdout. Use `./core_tester --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, and `--iteration`.
+Both aggregate testers execute the linked CO-RE test entrypoints in-process and write a JSON summary to stdout. Use `./core_tester --help` or `./core_tester_go --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, and `--iteration`.
 
-`./core_tester_go` is a stdlib-only Go port of `./core_tester` intended for side-by-side parity checks. It preserves the same flags, default selection behavior, JSON schema, and exit-code policy without replacing the current C workflow.
+`./core_tester_go` is built from `src/core_tester_go/core_tester.go` and uses CGO plus `netdata_core_loader.{c,h}` to call the renamed C test entrypoints directly. It does not spawn `src/tests/<module>` binaries, and `--tests-dir` is accepted only for CLI compatibility.
 
 `./core_tester --all` runs all non-filesystem CO-RE tests and expands each selected module across every mode that tester supports.
 
