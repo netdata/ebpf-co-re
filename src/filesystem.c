@@ -29,7 +29,7 @@ struct filesystem_data {
 #define NETDATA_BTRFS_BTF_FILE "/sys/kernel/btf/btrfs"
 */
 
-struct filesystem_data fd[] = {
+static struct filesystem_data fd[] = {
     {   
         .name = "nfs",
         .path = NULL,
@@ -380,4 +380,3 @@ int main(int argc, char **argv)
 
     return ret;
 }
-

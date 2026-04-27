@@ -19,16 +19,16 @@
 #include "socket.skel.h"
 
 // Socket functions
-char *function_list[] = { "inet_csk_accept",
-                          "tcp_retransmit_skb",
-                          "tcp_cleanup_rbuf",
-                          "tcp_close",
-                          "udp_recvmsg",
-                          "tcp_sendmsg",
-                          "udp_sendmsg",
-                          "tcp_v4_connect",
-                          "tcp_v6_connect",
-                          "tcp_set_state"};
+static char *function_list[] = { "inet_csk_accept",
+                                 "tcp_retransmit_skb",
+                                 "tcp_cleanup_rbuf",
+                                 "tcp_close",
+                                 "udp_recvmsg",
+                                 "tcp_sendmsg",
+                                 "udp_sendmsg",
+                                 "tcp_v4_connect",
+                                 "tcp_v6_connect",
+                                 "tcp_set_state"};
 
 #define NETDATA_IPV4 4
 #define NETDATA_IPV6 6
@@ -272,7 +272,7 @@ static inline int update_local_ports(struct socket_bpf *obj)
     return ret;
 }
 
-pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netdata_socket_t *values)
+static pid_t ebpf_update_tables(struct socket_bpf *obj, netdata_socket_idx_t *idx, netdata_socket_t *values)
 {
     pid_t my_pid = update_global(obj);
 
@@ -328,7 +328,7 @@ static int netdata_read_local_ports(struct socket_bpf *obj)
     return 2;
 }
 
-int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
+static int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
 {
     struct socket_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -461,4 +461,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

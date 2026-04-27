@@ -18,11 +18,11 @@
 
 #include "shm.skel.h"
 
-char *syscalls[] = { "__x64_sys_shmget",
-                     "__x64_sys_shmat",
-                     "__x64_sys_shmdt",
-                     "__x64_sys_shmctl"
-                                    };
+static char *syscalls[] = { "__x64_sys_shmget",
+                            "__x64_sys_shmat",
+                            "__x64_sys_shmdt",
+                            "__x64_sys_shmctl"
+                           };
 // This preprocessor is defined here, because it is not useful in kernel-colector
 #define NETDATA_SHM_RELEASE_TASK 4
 
@@ -129,7 +129,7 @@ static inline int ebpf_load_and_attach(struct shm_bpf *obj, int selector)
 }
 
 /* This is kept to show how to use the syscalls
-int call_syscalls()
+static int call_syscalls()
 {
 #define SHMSZ   27
     // Copied and adapt from https://github.com/netdata/netdata/pull/11560#issuecomment-927613811
@@ -169,7 +169,7 @@ int call_syscalls()
 }
 */
 
-void shm_fill_tables(struct shm_bpf *obj)
+static void shm_fill_tables(struct shm_bpf *obj)
 {
     int fd = bpf_map__fd(obj->maps.tbl_shm);
     uint32_t key;
@@ -211,7 +211,7 @@ static int shm_read_apps_array(int fd, int ebpf_nprocs)
     return 2;
 }
 
-int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_level)
+static int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_level)
 {
     struct shm_bpf *obj = NULL;
     int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -335,4 +335,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

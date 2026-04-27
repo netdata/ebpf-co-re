@@ -8,7 +8,7 @@
 #include "netdata_tests.h"
 #include "netdata_core_common.h"
 
-#include "../kernel-collector/kernel/tester_dns.h"
+#include "../kernel-collector/tests/tester_dns.h"
 
 #include "dns.skel.h"
 

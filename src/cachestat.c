@@ -37,7 +37,7 @@ static ebpf_specify_name_t cachestat_names[] = { {.program_name = "netdata_folio
                                                   .retprobe = 0},
                                                  {.program_name = NULL}};
 
-char *cachestat_fcnt[] = { "add_to_page_cache_lru",
+static char *cachestat_fcnt[] = { "add_to_page_cache_lru",
                      "mark_page_accessed",
                      NULL, // Filled after to discover available functions
                      "mark_buffer_dirty"
@@ -387,4 +387,3 @@ int main(int argc, char **argv)
     }
     return 0;
 }
-

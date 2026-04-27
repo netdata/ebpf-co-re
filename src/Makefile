@@ -36,9 +36,16 @@ APPS = cachestat \
        vfs \
        #
 
+AGGREGATE_TESTER = core_tester
+AGGREGATE_TESTER_GO = core_tester_go
+GO ?= go
+AGGREGATE_APP_OBJECTS = $(patsubst %,aggregate/%.o,$(APPS))
+LOADER_OBJ = netdata_core_loader.o
+AGGREGATE_LIB = aggregate/libnetdata_tests.a
+
 DNS_HELPER_OBJ = dns_tester_legacy.o
 
-all: compress
+all: compress $(OUTPUT)$(AGGREGATE_TESTER) $(OUTPUT)$(AGGREGATE_TESTER_GO)
 
 libbpf:
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
@@ -61,10 +68,29 @@ $(filter-out dns,$(APPS)): %: %.o
 dns: dns.o $(DNS_HELPER_OBJ)
 	$(CC) $(CFLAGS) -L../.local_libbpf $^ -lbpf -lelf -lz -o $(OUTPUT)$@
 
-$(DNS_HELPER_OBJ): ../kernel-collector/kernel/tester_dns.c libbpf
+$(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
 compress: $(APPS)
+
+aggregate/%.o: %.c %.skel.h
+	mkdir -p aggregate
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -Dmain=netdata_$*_entry -c $< -o $@
+
+$(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
+
+$(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
+	ar rcs $@ $^
+
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
+	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
+
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(wildcard core_tester_go/*.go)
+	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
+	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \
+	$(GO) build -o $@ core_tester_go/core_tester.go
 
 clean:
 	rm -f ../artifacts/netdata_ebpf-CO-RE-*.tar.xz
@@ -72,3 +98,5 @@ clean:
 	cd $(LIBBPF)/src/ && make clean
 	cd $(OUTPUT) && find . -type f ! -name '*.sh' ! -name '.git*'  -delete
 	rm -f *.o 
+	rm -rf aggregate
+	rm -rf embedded

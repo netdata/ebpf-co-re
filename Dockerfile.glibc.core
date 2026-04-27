@@ -13,6 +13,7 @@ RUN apt-get update && \
     apt-get install -y build-essential autoconf automake coreutils pkg-config \
                        bc libelf-dev libssl-dev clang-tools-16 libclang-16-dev \
                        llvm-16 rsync bison flex tar xz-utils wget libbfd-dev \
+                       golang-go \
                        libcap-dev
 
 # hadolint ignore=DL3059

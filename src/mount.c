@@ -25,8 +25,8 @@ enum netdata_mount_syscalls {
     NETDATA_MOUNT_SYSCALLS_END
 };
 
-char *syscalls[] = { "__x64_sys_mount",
-                     "__x64_sys_umount" };
+static char *syscalls[] = { "__x64_sys_mount",
+                            "__x64_sys_umount" };
 
 static int attach_probe(struct mount_bpf *obj)
 {
@@ -130,8 +130,8 @@ static inline int ebpf_load_and_attach(struct mount_bpf *obj, int selector)
 
 static int call_syscalls()
 {
-    char *dst = { "./mydst" };
-    if (mkdir(dst, 0777)) {
+    char dst[] = "/tmp/netdata-mount-XXXXXX";
+    if (!mkdtemp(dst)) {
         fprintf(stdout, "Cannot create directory\n");
         return -1;
     }
@@ -283,4 +283,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

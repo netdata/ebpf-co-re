@@ -117,6 +117,12 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
     } else { // tracepoint
         ebpf_disable_probes(obj);
         ebpf_disable_trampoline(obj);
+        /*
+         * Keep tracepoint mode aligned with the older process collector:
+         * rely on sched_process_* hooks and avoid optional sys_exit_*
+         * tracepoints that can reject attachment on some systems.
+         */
+        ebpf_disable_tracepoints(obj);
     }
 
 #if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,3,0))
@@ -313,4 +319,3 @@ int main(int argc, char **argv)
     }
     return 0;
 }
-
