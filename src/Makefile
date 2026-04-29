@@ -101,10 +101,10 @@ $(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
 $(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
 	ar rcs $@ $^
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS)
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(wildcard core_tester_go/*.go)
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(wildcard core_tester_go/*.go)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
 	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \

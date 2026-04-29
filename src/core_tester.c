@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <errno.h>
 #include <getopt.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -8,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 
 #include "netdata_core_loader.h"
 
@@ -79,7 +83,8 @@ enum option_ids {
     OPT_EXT4,
     OPT_BTRFS,
     OPT_XFS,
-    OPT_ZFS
+    OPT_ZFS,
+    OPT_BUFFER
 };
 
 typedef netdata_loader_fn_t aggregate_entrypoint_t;
@@ -94,6 +99,8 @@ typedef struct aggregate_test_case {
     unsigned modes;
     int emit_mode_arg;
     int pid_supported;
+    int buffer_supported;
+    const char *buffer_ctrl;
 } aggregate_test_case_t;
 
 typedef struct aggregate_result {
@@ -113,19 +120,22 @@ typedef struct aggregate_state {
     int selected_pid;
     uint64_t selection_mask;
     int explicit_selection;
+    int buffer_mode;
+    int buffer_iterations;
+    const char *tests_dir;
 } aggregate_state_t;
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "cstat_ctrl" },
     { "dc", "dc", netdata_dc_entry, NULL, NULL, SELECT_DC,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "dcstat_ctrl" },
     { "disk", "disk", netdata_disk_entry, NULL, NULL, SELECT_DISK,
       MODE_NONE, 0, 0 },
     { "dns", "dns", netdata_dns_entry, NULL, NULL, SELECT_DNS,
-      MODE_NONE, 0, 0 },
+      MODE_NONE, 0, 0, 1, NULL },
     { "fd", "fd", netdata_fd_entry, NULL, NULL, SELECT_FD,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "fd_ctrl" },
     { "hardirq", "hardirq", netdata_hardirq_entry, NULL, NULL, SELECT_HARDIRQ,
       MODE_NONE, 0, 0 },
     { "mdflush", "mdflush", netdata_mdflush_entry, NULL, NULL, SELECT_MDFLUSH,
@@ -135,21 +145,21 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "networkviewer", "networkviewer", netdata_networkviewer_entry, NULL, NULL, SELECT_NETWORKVIEWER,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
     { "oomkill", "oomkill", netdata_oomkill_entry, NULL, NULL, SELECT_OOMKILL,
-      MODE_NONE, 0, 0 },
+      MODE_NONE, 0, 0, 1, NULL },
     { "process", "process", netdata_process_entry, NULL, NULL, SELECT_PROCESS,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "process_ctrl" },
     { "shm", "shm", netdata_shm_entry, NULL, NULL, SELECT_SHM,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "shm_ctrl" },
     { "socket", "socket", netdata_socket_entry, NULL, NULL, SELECT_SOCKET,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
     { "softirq", "softirq", netdata_softirq_entry, NULL, NULL, SELECT_SOFTIRQ,
       MODE_NONE, 0, 0 },
     { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "swap_ctrl" },
     { "sync", "sync", netdata_sync_entry, NULL, NULL, SELECT_SYNC,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
     { "vfs", "vfs", netdata_vfs_entry, NULL, NULL, SELECT_VFS,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "vfs_ctrl" },
     { "nfs", "filesystem", netdata_filesystem_entry, "--nfs", NULL, SELECT_NFS,
       MODE_PROBE, 0, 0 },
     { "ext4", "filesystem", netdata_filesystem_entry, "--ext4", NULL, SELECT_EXT4,
@@ -351,6 +361,235 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
     return exit_code;
 }
 
+typedef struct ringbuf_stats {
+    size_t samples;
+    size_t bytes;
+} ringbuf_stats_t;
+
+static int ringbuf_sample_cb(void *ctx, void *data, size_t size)
+{
+    ringbuf_stats_t *stats = ctx;
+
+    (void)data;
+    if (stats) {
+        stats->samples++;
+        stats->bytes += size;
+    }
+
+    return 0;
+}
+
+static int map_is_ringbuf(enum bpf_map_type type)
+{
+    return type == BPF_MAP_TYPE_RINGBUF || type == BPF_MAP_TYPE_USER_RINGBUF;
+}
+
+static int resolve_buffer_object_path(const aggregate_state_t *state, const aggregate_test_case_t *test,
+                                      char *path, size_t path_size)
+{
+    const char *dirs[] = { ".", "..", NULL };
+    size_t i;
+
+    if (state->tests_dir) {
+        snprintf(path, path_size, "%s/%s_buffer.bpf.o", state->tests_dir, test->name);
+        if (!access(path, R_OK))
+            return 0;
+    }
+
+    for (i = 0; dirs[i]; i++) {
+        snprintf(path, path_size, "%s/%s_buffer.bpf.o", dirs[i], test->name);
+        if (!access(path, R_OK))
+            return 0;
+    }
+
+    snprintf(path, path_size, "%s_buffer.bpf.o", test->name);
+    return -ENOENT;
+}
+
+static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
+{
+    struct bpf_map *map;
+    int fd;
+    __u64 values[] = { 1, (uint64_t)map_level, 0, 0, 0, 0 };
+    __u32 i;
+    __u32 max_entries;
+
+    if (!ctrl_name)
+        return;
+
+    map = bpf_object__find_map_by_name(obj, ctrl_name);
+    if (!map)
+        return;
+
+    fd = bpf_map__fd(map);
+    max_entries = bpf_map__max_entries(map);
+    for (i = 0; i < max_entries && i < sizeof(values) / sizeof(values[0]); i++)
+        bpf_map_update_elem(fd, &i, &values[i], 0);
+}
+
+static int test_ringbuf_map(struct bpf_map *map, int iterations)
+{
+    enum bpf_map_type type = bpf_map__type(map);
+    int fd = bpf_map__fd(map);
+    int setup_error = 0;
+    int op_error = 0;
+    int i;
+    struct ring_buffer *rb = NULL;
+    struct user_ring_buffer *urb = NULL;
+    ringbuf_stats_t stats = { 0 };
+
+    if (type == BPF_MAP_TYPE_RINGBUF) {
+        rb = ring_buffer__new(fd, ringbuf_sample_cb, &stats, NULL);
+        setup_error = libbpf_get_error(rb);
+        if (setup_error)
+            rb = NULL;
+    } else if (type == BPF_MAP_TYPE_USER_RINGBUF) {
+        urb = user_ring_buffer__new(fd, NULL);
+        setup_error = libbpf_get_error(urb);
+        if (setup_error)
+            urb = NULL;
+    }
+
+    op_error = setup_error;
+    for (i = 0; i < iterations; i++) {
+        if (i > 0 || iterations == 1)
+            sleep(1);
+
+        if (rb) {
+            int ret = ring_buffer__poll(rb, 0);
+            if (ret < 0)
+                op_error = ret;
+        } else if (urb) {
+            __u64 value = i + 1;
+            void *sample = user_ring_buffer__reserve(urb, sizeof(value));
+            if (!sample) {
+                op_error = errno ? -errno : -1;
+            } else {
+                memcpy(sample, &value, sizeof(value));
+                user_ring_buffer__submit(urb, sample);
+            }
+        }
+    }
+
+    if (rb)
+        ring_buffer__free(rb);
+    if (urb)
+        user_ring_buffer__free(urb);
+
+    return op_error;
+}
+
+static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **links, size_t links_len,
+                                  size_t *attached, size_t *skipped)
+{
+    struct bpf_program *prog;
+    int last_error = 0;
+
+    bpf_object__for_each_program(prog, obj) {
+        struct bpf_link *link;
+
+        if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
+            (*skipped)++;
+            continue;
+        }
+
+        if (*attached >= links_len)
+            return -ENOSPC;
+
+        link = bpf_program__attach(prog);
+        last_error = libbpf_get_error(link);
+        if (last_error)
+            return last_error;
+
+        links[(*attached)++] = link;
+    }
+
+    return 0;
+}
+
+static int execute_buffer_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
+                               aggregate_result_t *result)
+{
+    char path[512];
+    struct bpf_object *obj = NULL;
+    struct bpf_map *map;
+    struct bpf_link *links[64] = { 0 };
+    size_t attached = 0;
+    size_t skipped = 0;
+    size_t ringbuf_maps = 0;
+    size_t maps = 0;
+    int err = 0;
+    size_t i;
+
+    init_result(result, test);
+    snprintf(result->mode, sizeof(result->mode), "%s", "buffer");
+    snprintf(result->binary, sizeof(result->binary), "%s_buffer.bpf.o", test->name);
+
+    if (!test->buffer_supported) {
+        snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+        snprintf(result->detail, sizeof(result->detail), "%s", "Collector has no CO-RE buffer object.");
+        return 0;
+    }
+
+    if (resolve_buffer_object_path(state, test, path, sizeof(path))) {
+        snprintf(result->status, sizeof(result->status), "%s", "Fail");
+        snprintf(result->detail, sizeof(result->detail), "%s", "Buffer BPF object not found.");
+        snprintf(result->command, sizeof(result->command), "%.255s", path);
+        return 1;
+    }
+
+    snprintf(result->command, sizeof(result->command), "%.255s", path);
+    fprintf(stderr, "Running buffer object test %s\n", path);
+
+    obj = bpf_object__open_file(path, NULL);
+    err = libbpf_get_error(obj);
+    if (err) {
+        obj = NULL;
+        goto fail;
+    }
+
+    err = bpf_object__load(obj);
+    if (err)
+        goto fail;
+
+    fill_ctrl_map(obj, test->buffer_ctrl, state->selected_pid >= 0 ? state->selected_pid : PID_MIN);
+
+    err = attach_buffer_programs(obj, links, sizeof(links) / sizeof(links[0]), &attached, &skipped);
+    if (err)
+        goto fail;
+
+    bpf_object__for_each_map(map, obj) {
+        maps++;
+        if (map_is_ringbuf(bpf_map__type(map))) {
+            ringbuf_maps++;
+            err = test_ringbuf_map(map, state->buffer_iterations);
+            if (err)
+                goto fail;
+        }
+    }
+
+    for (i = 0; i < attached; i++)
+        bpf_link__destroy(links[i]);
+    bpf_object__close(obj);
+
+    snprintf(result->status, sizeof(result->status), "%s", "Success");
+    snprintf(result->detail, sizeof(result->detail),
+             "Loaded object, attached %zu programs, skipped %zu socket filters, checked %zu maps and %zu ring buffers.",
+             attached, skipped, maps, ringbuf_maps);
+    return 0;
+
+fail:
+    for (i = 0; i < attached; i++)
+        bpf_link__destroy(links[i]);
+    if (obj)
+        bpf_object__close(obj);
+
+    snprintf(result->status, sizeof(result->status), "%s", "Fail");
+    snprintf(result->detail, sizeof(result->detail), "Buffer object test failed with error %d.", err);
+    result->exit_code = err ? err : 1;
+    return 1;
+}
+
 static void print_help(const char *name)
 {
     fprintf(stdout,
@@ -363,6 +602,7 @@ static void print_help(const char *name)
             "  --iteration N     Forward the capture iteration count to the DNS tester.\n"
             "  --tests-dir PATH  Accepted for compatibility and ignored in standalone mode.\n"
             "  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"
+            "  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"
             "\n"
             "Selectors:\n"
             "  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"
@@ -410,10 +650,11 @@ int main(int argc, char **argv)
         { "btrfs",         no_argument,       0, OPT_BTRFS },
         { "xfs",           no_argument,       0, OPT_XFS },
         { "zfs",           no_argument,       0, OPT_ZFS },
+        { "buffer",        no_argument,       0, OPT_BUFFER },
         { 0,               0,                 0, 0 }
     };
 
-    aggregate_state_t state = { .selected_pid = -1 };
+    aggregate_state_t state = { .selected_pid = -1, .buffer_iterations = 1 };
     aggregate_result_t results[192];
     const char *log_path = NULL;
     FILE *report = stdout;
@@ -445,8 +686,12 @@ int main(int argc, char **argv)
                 break;
             case OPT_ITERATION:
                 state.dns_iterations = optarg;
+                state.buffer_iterations = (int)strtol(optarg, NULL, 10);
+                if (state.buffer_iterations < 1)
+                    state.buffer_iterations = 1;
                 break;
             case OPT_TESTS_DIR:
+                state.tests_dir = optarg;
                 break;
             case OPT_LOG_PATH:
                 log_path = optarg;
@@ -547,6 +792,9 @@ int main(int argc, char **argv)
                 state.selection_mask |= SELECT_ZFS;
                 state.explicit_selection = 1;
                 break;
+            case OPT_BUFFER:
+                state.buffer_mode = 1;
+                break;
             default:
                 break;
         }
@@ -572,6 +820,16 @@ int main(int argc, char **argv)
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;
+
+        if (state.buffer_mode) {
+            if (!test->buffer_supported)
+                continue;
+
+            failures += execute_buffer_test(&state, test, &results[result_count]) != 0;
+            write_result(report, &results[result_count], &first);
+            result_count++;
+            continue;
+        }
 
         if (test->unavailable_reason) {
             record_unavailable(&results[result_count], test, test->unavailable_reason);

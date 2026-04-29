@@ -2,7 +2,145 @@ package main
 
 /*
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 #include "netdata_core_loader.h"
+
+struct netdata_core_ringbuf_stats {
+	size_t samples;
+	size_t bytes;
+};
+
+static int netdata_core_ringbuf_sample_cb(void *ctx, void *data, size_t size)
+{
+	struct netdata_core_ringbuf_stats *stats = ctx;
+
+	(void)data;
+	if (stats) {
+		stats->samples++;
+		stats->bytes += size;
+	}
+
+	return 0;
+}
+
+static struct bpf_object *netdata_core_bpf_open(const char *path)
+{
+	return bpf_object__open_file(path, NULL);
+}
+
+static int netdata_core_libbpf_get_error(const void *ptr)
+{
+	return (int)libbpf_get_error(ptr);
+}
+
+static int netdata_core_bpf_load(struct bpf_object *obj)
+{
+	return bpf_object__load(obj);
+}
+
+static void netdata_core_bpf_close(struct bpf_object *obj)
+{
+	bpf_object__close(obj);
+}
+
+static struct bpf_program *netdata_core_first_program(struct bpf_object *obj)
+{
+	return bpf_object__next_program(obj, NULL);
+}
+
+static struct bpf_program *netdata_core_next_program(struct bpf_object *obj, struct bpf_program *prev)
+{
+	return bpf_object__next_program(obj, prev);
+}
+
+static int netdata_core_program_type(const struct bpf_program *prog)
+{
+	return (int)bpf_program__type(prog);
+}
+
+static struct bpf_link *netdata_core_program_attach(struct bpf_program *prog)
+{
+	return bpf_program__attach(prog);
+}
+
+static void netdata_core_link_destroy(struct bpf_link *link)
+{
+	bpf_link__destroy(link);
+}
+
+static struct bpf_map *netdata_core_first_map(struct bpf_object *obj)
+{
+	return bpf_object__next_map(obj, NULL);
+}
+
+static struct bpf_map *netdata_core_next_map(struct bpf_object *obj, struct bpf_map *prev)
+{
+	return bpf_object__next_map(obj, prev);
+}
+
+static struct bpf_map *netdata_core_find_map(struct bpf_object *obj, const char *name)
+{
+	return bpf_object__find_map_by_name(obj, name);
+}
+
+static int netdata_core_map_fd(const struct bpf_map *map)
+{
+	return bpf_map__fd(map);
+}
+
+static int netdata_core_map_type(const struct bpf_map *map)
+{
+	return (int)bpf_map__type(map);
+}
+
+static unsigned int netdata_core_map_max_entries(const struct bpf_map *map)
+{
+	return bpf_map__max_entries(map);
+}
+
+static int netdata_core_map_update_u64(int fd, unsigned int key, unsigned long long value)
+{
+	return bpf_map_update_elem(fd, &key, &value, 0);
+}
+
+static struct ring_buffer *netdata_core_ring_buffer_new(int fd, struct netdata_core_ringbuf_stats *stats)
+{
+	return ring_buffer__new(fd, netdata_core_ringbuf_sample_cb, stats, NULL);
+}
+
+static int netdata_core_ring_buffer_poll(struct ring_buffer *rb)
+{
+	return ring_buffer__poll(rb, 0);
+}
+
+static void netdata_core_ring_buffer_free(struct ring_buffer *rb)
+{
+	ring_buffer__free(rb);
+}
+
+static struct user_ring_buffer *netdata_core_user_ring_buffer_new(int fd)
+{
+	return user_ring_buffer__new(fd, NULL);
+}
+
+static int netdata_core_user_ring_buffer_submit_u64(struct user_ring_buffer *rb, unsigned long long value)
+{
+	void *sample = user_ring_buffer__reserve(rb, sizeof(value));
+	if (!sample)
+		return errno ? -errno : -1;
+
+	memcpy(sample, &value, sizeof(value));
+	user_ring_buffer__submit(rb, sample);
+	return 0;
+}
+
+static void netdata_core_user_ring_buffer_free(struct user_ring_buffer *rb)
+{
+	user_ring_buffer__free(rb);
+}
 */
 import "C"
 
@@ -11,8 +149,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -24,6 +164,10 @@ const (
 
 	pidMin = 0
 	pidMax = 3
+
+	bpfMapTypeRingBuf     = uint32(C.BPF_MAP_TYPE_RINGBUF)
+	bpfMapTypeUserRingBuf = uint32(C.BPF_MAP_TYPE_USER_RINGBUF)
+	bpfProgTypeSocket     = uint32(C.BPF_PROG_TYPE_SOCKET_FILTER)
 )
 
 const (
@@ -67,6 +211,8 @@ type aggregateTestCase struct {
 	modes             uint
 	emitModeArg       bool
 	pidSupported      bool
+	bufferSupported   bool
+	bufferCtrl        string
 }
 
 type aggregateResult struct {
@@ -86,26 +232,29 @@ type aggregateState struct {
 	selectedPID       int
 	selectionMask     uint64
 	explicitSelection bool
+	bufferMode        bool
+	bufferIterations  int
+	testsDir          string
 }
 
 var aggregateTests = []aggregateTestCase{
-	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "cstat_ctrl"},
+	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "dcstat_ctrl"},
 	{name: "disk", binary: "disk", selectionBit: selectDisk},
-	{name: "dns", binary: "dns", selectionBit: selectDNS},
-	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "dns", binary: "dns", selectionBit: selectDNS, bufferSupported: true},
+	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "fd_ctrl"},
 	{name: "hardirq", binary: "hardirq", selectionBit: selectHardirq},
 	{name: "mdflush", binary: "mdflush", selectionBit: selectMdflush, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "mount", binary: "mount", selectionBit: selectMount, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "networkviewer", binary: "networkviewer", selectionBit: selectNetworkviewer, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill},
-	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill, bufferSupported: true},
+	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "process_ctrl"},
+	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "shm_ctrl"},
 	{name: "socket", binary: "socket", selectionBit: selectSocket, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
 	{name: "softirq", binary: "softirq", selectionBit: selectSoftirq},
-	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "swap_ctrl"},
 	{name: "sync", binary: "sync", selectionBit: selectSync, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
-	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "vfs_ctrl"},
 	{name: "nfs", binary: "filesystem", extraArg: "--nfs", selectionBit: selectNFS, modes: modeProbe},
 	{name: "ext4", binary: "filesystem", extraArg: "--ext4", selectionBit: selectExt4, modes: modeProbe},
 	{name: "btrfs", binary: "filesystem", extraArg: "--btrfs", selectionBit: selectBtrfs, modes: modeProbe},
@@ -250,6 +399,192 @@ func executeTest(state aggregateState, test aggregateTestCase, mode uint, pid in
 	return result, exitCode
 }
 
+func resolveBufferObjectPath(state aggregateState, test aggregateTestCase) (string, error) {
+	candidates := []string{}
+	if state.testsDir != "" {
+		candidates = append(candidates, filepath.Join(state.testsDir, test.name+"_buffer.bpf.o"))
+	}
+	candidates = append(candidates,
+		filepath.Join(".", test.name+"_buffer.bpf.o"),
+		filepath.Join("..", test.name+"_buffer.bpf.o"),
+	)
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return filepath.Join(".", test.name+"_buffer.bpf.o"), os.ErrNotExist
+}
+
+func fillBufferCtrl(obj *C.struct_bpf_object, ctrlName string, mapLevel int) {
+	if ctrlName == "" {
+		return
+	}
+
+	cName := C.CString(ctrlName)
+	defer C.free(unsafe.Pointer(cName))
+
+	m := C.netdata_core_find_map(obj, cName)
+	if m == nil {
+		return
+	}
+
+	fd := int(C.netdata_core_map_fd(m))
+	maxEntries := int(C.netdata_core_map_max_entries(m))
+	values := []uint64{1, uint64(mapLevel), 0, 0, 0, 0}
+	for i := 0; i < maxEntries && i < len(values); i++ {
+		C.netdata_core_map_update_u64(C.int(fd), C.uint(i), C.ulonglong(values[i]))
+	}
+}
+
+func testBufferRingMap(m *C.struct_bpf_map, iterations int) int {
+	mapType := uint32(C.netdata_core_map_type(m))
+	fd := C.netdata_core_map_fd(m)
+	setupErr := 0
+	opErr := 0
+
+	if iterations < 1 {
+		iterations = 1
+	}
+
+	if mapType == bpfMapTypeRingBuf {
+		stats := &C.struct_netdata_core_ringbuf_stats{}
+		rb := C.netdata_core_ring_buffer_new(fd, stats)
+		setupErr = int(C.netdata_core_libbpf_get_error(unsafe.Pointer(rb)))
+		if setupErr != 0 {
+			return setupErr
+		}
+		defer C.netdata_core_ring_buffer_free(rb)
+
+		for i := 0; i < iterations; i++ {
+			time.Sleep(time.Second)
+			ret := int(C.netdata_core_ring_buffer_poll(rb))
+			if ret < 0 {
+				opErr = ret
+			}
+		}
+		return opErr
+	}
+
+	if mapType == bpfMapTypeUserRingBuf {
+		rb := C.netdata_core_user_ring_buffer_new(fd)
+		setupErr = int(C.netdata_core_libbpf_get_error(unsafe.Pointer(rb)))
+		if setupErr != 0 {
+			return setupErr
+		}
+		defer C.netdata_core_user_ring_buffer_free(rb)
+
+		for i := 0; i < iterations; i++ {
+			time.Sleep(time.Second)
+			ret := int(C.netdata_core_user_ring_buffer_submit_u64(rb, C.ulonglong(i+1)))
+			if ret < 0 {
+				opErr = ret
+			}
+		}
+	}
+
+	return opErr
+}
+
+func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateResult, int) {
+	result := initResult(test)
+	result.mode = "buffer"
+	result.binary = test.name + "_buffer.bpf.o"
+
+	if !test.bufferSupported {
+		result.status = "Unavailable"
+		result.detail = "Collector has no CO-RE buffer object."
+		return result, 0
+	}
+
+	path, err := resolveBufferObjectPath(state, test)
+	result.command = path
+	if err != nil {
+		result.status = "Fail"
+		result.exitCode = 1
+		result.detail = "Buffer BPF object not found."
+		return result, 1
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Running buffer object test %s\n", path)
+
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	obj := C.netdata_core_bpf_open(cPath)
+	if errCode := int(C.netdata_core_libbpf_get_error(unsafe.Pointer(obj))); errCode != 0 {
+		result.status = "Fail"
+		result.exitCode = errCode
+		result.detail = fmt.Sprintf("Open failed with error %d.", errCode)
+		return result, 1
+	}
+	defer C.netdata_core_bpf_close(obj)
+
+	if errCode := int(C.netdata_core_bpf_load(obj)); errCode != 0 {
+		result.status = "Fail"
+		result.exitCode = errCode
+		result.detail = fmt.Sprintf("Load failed with error %d.", errCode)
+		return result, 1
+	}
+
+	mapLevel := state.selectedPID
+	if mapLevel < 0 {
+		mapLevel = pidMin
+	}
+	fillBufferCtrl(obj, test.bufferCtrl, mapLevel)
+
+	links := []*C.struct_bpf_link{}
+	skipped := 0
+	for prog := C.netdata_core_first_program(obj); prog != nil; prog = C.netdata_core_next_program(obj, prog) {
+		if uint32(C.netdata_core_program_type(prog)) == bpfProgTypeSocket {
+			skipped++
+			continue
+		}
+
+		link := C.netdata_core_program_attach(prog)
+		if errCode := int(C.netdata_core_libbpf_get_error(unsafe.Pointer(link))); errCode != 0 {
+			for _, attached := range links {
+				C.netdata_core_link_destroy(attached)
+			}
+			result.status = "Fail"
+			result.exitCode = errCode
+			result.detail = fmt.Sprintf("Attach failed with error %d.", errCode)
+			return result, 1
+		}
+		links = append(links, link)
+	}
+	defer func() {
+		for _, link := range links {
+			C.netdata_core_link_destroy(link)
+		}
+	}()
+
+	maps := 0
+	ringMaps := 0
+	for m := C.netdata_core_first_map(obj); m != nil; m = C.netdata_core_next_map(obj, m) {
+		maps++
+		mapType := uint32(C.netdata_core_map_type(m))
+		if mapType != bpfMapTypeRingBuf && mapType != bpfMapTypeUserRingBuf {
+			continue
+		}
+
+		ringMaps++
+		if errCode := testBufferRingMap(m, state.bufferIterations); errCode != 0 {
+			result.status = "Fail"
+			result.exitCode = errCode
+			result.detail = fmt.Sprintf("Ring buffer map test failed with error %d.", errCode)
+			return result, 1
+		}
+	}
+
+	result.status = "Success"
+	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
+		len(links), skipped, maps, ringMaps)
+	return result, 0
+}
+
 func printHelp(out io.Writer, name string) {
 	_, _ = fmt.Fprintf(out,
 		"%s runs the CO-RE tests in-process and aggregates their results.\n\n"+
@@ -261,6 +596,7 @@ func printHelp(out io.Writer, name string) {
 			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
 			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
+			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+
 			"\n"+
 			"Selectors:\n"+
 			"  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"+
@@ -321,7 +657,7 @@ func nextOptionValue(args []string, index *int, inlineValue string, option strin
 }
 
 func parseArgs(args []string) (aggregateState, string, bool, error) {
-	state := aggregateState{selectedPID: -1}
+	state := aggregateState{selectedPID: -1, bufferIterations: 1}
 	logPath := ""
 
 	for i := 0; i < len(args); i++ {
@@ -366,12 +702,16 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			}
 
 			state.dnsIterations = value
+			state.bufferIterations = parseLeadingInt(value)
+			if state.bufferIterations < 1 {
+				state.bufferIterations = 1
+			}
 		case "tests-dir":
-			// accepted for backward compatibility; no-op in in-process mode
-			_, err := nextOptionValue(args, &i, inlineValue, option)
+			value, err := nextOptionValue(args, &i, inlineValue, option)
 			if err != nil {
 				return state, logPath, false, err
 			}
+			state.testsDir = value
 		case "log-path":
 			value, err := nextOptionValue(args, &i, inlineValue, option)
 			if err != nil {
@@ -451,6 +791,8 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 		case "zfs":
 			state.selectionMask |= selectZFS
 			state.explicitSelection = true
+		case "buffer":
+			state.bufferMode = true
 		default:
 			return state, logPath, false, fmt.Errorf("unrecognized option '--%s'", option)
 		}
@@ -497,6 +839,20 @@ func main() {
 
 	for _, test := range aggregateTests {
 		if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
+			continue
+		}
+
+		if state.bufferMode {
+			if !test.bufferSupported {
+				continue
+			}
+
+			result, exitCode := executeBufferTest(state, test)
+			if exitCode != 0 {
+				failures++
+			}
+			writeResult(report, result, &first)
+			resultCount++
 			continue
 		}
 
