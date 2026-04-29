@@ -36,6 +36,24 @@ APPS = cachestat \
        vfs \
        #
 
+BUFFER_APPS = cachestat_buffer \
+              dc_buffer \
+              dns_buffer \
+              fd_buffer \
+              oomkill_buffer \
+              process_buffer \
+              shm_buffer \
+              swap_buffer \
+              vfs_buffer \
+              #
+
+# BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8.
+ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 329728 ; echo $$?),0)
+RINGBUF_SKELS = $(patsubst %,%.skel.h,$(BUFFER_APPS))
+else
+RINGBUF_SKELS =
+endif
+
 AGGREGATE_TESTER = core_tester
 AGGREGATE_TESTER_GO = core_tester_go
 GO ?= go
@@ -71,7 +89,7 @@ dns: dns.o $(DNS_HELPER_OBJ)
 $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
-compress: $(APPS)
+compress: $(APPS) $(RINGBUF_SKELS)
 
 aggregate/%.o: %.c %.skel.h
 	mkdir -p aggregate
