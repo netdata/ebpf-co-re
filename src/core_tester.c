@@ -121,6 +121,7 @@ typedef struct aggregate_result {
     int exit_code;
     char command[256];
     char detail[256];
+    char maps_json[4096];
 } aggregate_result_t;
 
 typedef struct aggregate_state {
@@ -339,6 +340,8 @@ static void write_result(FILE *out, const aggregate_result_t *result, int *first
     json_write_string(out, result->command);
     fprintf(out, ",\n      \"detail\": ");
     json_write_string(out, result->detail);
+    if (result->maps_json[0])
+        fprintf(out, ",\n      \"maps\": {\n%s\n      }", result->maps_json);
     fprintf(out, "\n    }");
 }
 
@@ -443,6 +446,16 @@ static int map_is_ringbuf(enum bpf_map_type type)
     return type == BPF_MAP_TYPE_RINGBUF || type == BPF_MAP_TYPE_USER_RINGBUF;
 }
 
+static const char *format_error(int err, char *buf, size_t size)
+{
+    if (!err)
+        return "No error information";
+    if (err < 0)
+        err = -err;
+    snprintf(buf, size, "%s", strerror(err));
+    return buf;
+}
+
 static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 {
     size_t i;
@@ -476,16 +489,33 @@ static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map
         bpf_map_update_elem(fd, &i, &values[i], 0);
 }
 
-static int test_ringbuf_map(struct bpf_map *map, int iterations)
+static int test_ringbuf_map(struct bpf_map *map, int iterations,
+                            char *map_json_buf, size_t map_json_size)
 {
     enum bpf_map_type type = bpf_map__type(map);
     int fd = bpf_map__fd(map);
+    uint32_t key_size = bpf_map__key_size(map);
+    uint32_t value_size = bpf_map__value_size(map);
+    const char *mode = (type == BPF_MAP_TYPE_USER_RINGBUF) ? "user_ringbuf_producer" : "ringbuf_consumer";
     int setup_error = 0;
     int op_error = 0;
     int i;
     struct ring_buffer *rb = NULL;
     struct user_ring_buffer *urb = NULL;
     ringbuf_stats_t stats = { 0 };
+    ringbuf_stats_t previous = { 0 };
+    size_t pos = 0;
+    char errbuf[128];
+    int n;
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "{\n"
+        "            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+        "                       \"Type\" : %u,\n"
+        "                       \"FD\" : %d,\n"
+        "                       \"Data\" : [\n",
+        key_size, value_size, (unsigned)type, fd);
+    if (n > 0) pos += (size_t)n;
 
     if (type == BPF_MAP_TYPE_RINGBUF) {
         rb = ring_buffer__new(fd, ringbuf_sample_cb, &stats, NULL);
@@ -501,24 +531,67 @@ static int test_ringbuf_map(struct bpf_map *map, int iterations)
 
     op_error = setup_error;
     for (i = 0; i < iterations; i++) {
-        if (i > 0 || iterations == 1)
-            sleep(1);
+        size_t iter_samples = 0;
+        size_t iter_bytes = 0;
+        size_t ring_size = 0;
+        size_t avail_data = 0;
+        int cur_op_result = 0;
+
+        sleep(10);
 
         if (rb) {
-            int ret = ring_buffer__poll(rb, 0);
-            if (ret < 0)
-                op_error = ret;
+            struct ring *ring = ring_buffer__ring(rb, 0);
+
+            cur_op_result = ring_buffer__poll(rb, 0);
+            if (cur_op_result < 0)
+                op_error = cur_op_result;
+
+            iter_samples = stats.samples - previous.samples;
+            iter_bytes = stats.bytes - previous.bytes;
+            previous = stats;
+
+            if (ring) {
+                ring_size = ring__size(ring);
+                avail_data = ring__avail_data_size(ring);
+            }
         } else if (urb) {
-            __u64 value = i + 1;
+            __u64 value = (__u64)(i + 1);
             void *sample = user_ring_buffer__reserve(urb, sizeof(value));
             if (!sample) {
-                op_error = errno ? -errno : -1;
+                cur_op_result = errno ? -errno : -1;
+                op_error = cur_op_result;
             } else {
                 memcpy(sample, &value, sizeof(value));
                 user_ring_buffer__submit(urb, sample);
             }
         }
+
+        if (i > 0 && pos < map_json_size - 1) {
+            n = snprintf(map_json_buf + pos, map_json_size - pos, ",\n");
+            if (n > 0) pos += (size_t)n;
+        }
+
+        n = snprintf(map_json_buf + pos, map_json_size - pos,
+            "                                    "
+            "{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+            "\"Operation Result\" : %d, \"Samples\" : %zu, \"Bytes\" : %zu, "
+            "\"Available\" : %zu, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+            "\"Error Message\" : \"%s\" }",
+            i, mode, !setup_error, cur_op_result,
+            iter_samples, iter_bytes, avail_data, ring_size,
+            op_error, format_error(op_error, errbuf, sizeof(errbuf)));
+        if (n > 0) pos += (size_t)n;
+        if (pos >= map_json_size - 1)
+            pos = map_json_size - 1;
     }
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "\n                                ]\n"
+        "                      }\n"
+        "        }");
+    if (n > 0) pos += (size_t)n;
+    if (pos < map_json_size)
+        map_json_buf[pos] = '\0';
 
     if (rb)
         ring_buffer__free(rb);
@@ -570,6 +643,8 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
     size_t maps = 0;
     int err = 0;
     size_t i;
+    size_t maps_json_pos = 0;
+    char map_json_buf[2048];
 
     init_result(result, test);
     snprintf(result->mode, sizeof(result->mode), "%s", "buffer");
@@ -614,13 +689,37 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
         goto fail;
 
     bpf_object__for_each_map(map, obj) {
+        const char *map_name = bpf_map__name(map);
+        int n;
+
         maps++;
-        if (map_is_ringbuf(bpf_map__type(map))) {
-            ringbuf_maps++;
-            err = test_ringbuf_map(map, state->buffer_iterations);
-            if (err)
-                goto fail;
+        if (!map_is_ringbuf(bpf_map__type(map)))
+            continue;
+
+        if (maps_json_pos > 0 && maps_json_pos < sizeof(result->maps_json) - 1) {
+            n = snprintf(result->maps_json + maps_json_pos,
+                         sizeof(result->maps_json) - maps_json_pos, ",\n");
+            if (n > 0) maps_json_pos += (size_t)n;
         }
+        n = snprintf(result->maps_json + maps_json_pos,
+                     sizeof(result->maps_json) - maps_json_pos,
+                     "        \"%s\" : ", map_name);
+        if (n > 0) maps_json_pos += (size_t)n;
+
+        ringbuf_maps++;
+        map_json_buf[0] = '\0';
+        err = test_ringbuf_map(map, state->buffer_iterations,
+                               map_json_buf, sizeof(map_json_buf));
+
+        n = snprintf(result->maps_json + maps_json_pos,
+                     sizeof(result->maps_json) - maps_json_pos, "%s", map_json_buf);
+        if (n > 0) maps_json_pos += (size_t)n;
+        if (maps_json_pos >= sizeof(result->maps_json) - 1)
+            maps_json_pos = sizeof(result->maps_json) - 1;
+        result->maps_json[maps_json_pos] = '\0';
+
+        if (err)
+            goto fail;
     }
 
     for (i = 0; i < attached; i++)

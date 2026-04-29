@@ -119,65 +119,150 @@ static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_
 		bpf_map_update_elem(fd, &i, &values[i], 0);
 }
 
-static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations)
+static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
+					 char *map_json_buf, int map_json_size)
 {
 	int map_type = (int)bpf_map__type(map);
 	int fd = bpf_map__fd(map);
+	unsigned int key_size = (unsigned int)bpf_map__key_size(map);
+	unsigned int value_size = (unsigned int)bpf_map__value_size(map);
+	const char *mode = (map_type == BPF_MAP_TYPE_USER_RINGBUF) ? "user_ringbuf_producer" : "ringbuf_consumer";
+	int setup_err = 0;
 	int op_err = 0;
 	int i;
+	int pos = 0;
+	int n;
 
 	if (iterations < 1)
 		iterations = 1;
 
+	n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+		"{\n"
+		"            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+		"                       \"Type\" : %d,\n"
+		"                       \"FD\" : %d,\n"
+		"                       \"Data\" : [\n",
+		key_size, value_size, map_type, fd);
+	if (n > 0) pos += n;
+
 	if (map_type == BPF_MAP_TYPE_RINGBUF) {
 		struct netdata_core_ringbuf_stats stats = { 0 };
+		struct netdata_core_ringbuf_stats prev = { 0 };
 		struct ring_buffer *rb = ring_buffer__new(fd, netdata_core_ringbuf_sample_cb, &stats, NULL);
-		int setup_err = (int)libbpf_get_error(rb);
-
-		if (setup_err)
-			return setup_err;
-
-		for (i = 0; i < iterations; i++) {
-			sleep(1);
-			int ret = ring_buffer__poll(rb, 0);
-			if (ret < 0)
-				op_err = ret;
+		setup_err = (int)libbpf_get_error(rb);
+		if (setup_err) {
+			rb = NULL;
+			op_err = setup_err;
 		}
 
-		ring_buffer__free(rb);
-		return op_err;
-	}
+		for (i = 0; i < iterations; i++) {
+			size_t iter_samples = 0;
+			size_t iter_bytes = 0;
+			size_t ring_sz = 0;
+			size_t avail = 0;
+			int cur_result = 0;
 
-	if (map_type == BPF_MAP_TYPE_USER_RINGBUF) {
+			sleep(10);
+
+			if (rb) {
+				struct ring *ring = ring_buffer__ring(rb, 0);
+				cur_result = ring_buffer__poll(rb, 0);
+				if (cur_result < 0)
+					op_err = cur_result;
+
+				iter_samples = stats.samples - prev.samples;
+				iter_bytes = stats.bytes - prev.bytes;
+				prev = stats;
+
+				if (ring) {
+					ring_sz = ring__size(ring);
+					avail = ring__avail_data_size(ring);
+				}
+			}
+
+			if (pos < map_json_size - 1) {
+				if (i > 0) {
+					n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos), ",\n");
+					if (n > 0) pos += n;
+				}
+				n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+					"                                    "
+					"{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+					"\"Operation Result\" : %d, \"Samples\" : %zu, \"Bytes\" : %zu, "
+					"\"Available\" : %zu, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+					"\"Error Message\" : \"%s\" }",
+					i, mode, !setup_err, cur_result,
+					iter_samples, iter_bytes, avail, ring_sz,
+					op_err, op_err ? strerror(-op_err) : "No error information");
+				if (n > 0) pos += n;
+			}
+		}
+
+		if (rb)
+			ring_buffer__free(rb);
+
+	} else if (map_type == BPF_MAP_TYPE_USER_RINGBUF) {
 		struct user_ring_buffer *rb = user_ring_buffer__new(fd, NULL);
-		int setup_err = (int)libbpf_get_error(rb);
-
-		if (setup_err)
-			return setup_err;
+		setup_err = (int)libbpf_get_error(rb);
+		if (setup_err) {
+			rb = NULL;
+			op_err = setup_err;
+		}
 
 		for (i = 0; i < iterations; i++) {
 			unsigned long long value = (unsigned long long)i + 1;
-			void *sample;
+			int cur_result = 0;
 
-			sleep(1);
-			sample = user_ring_buffer__reserve(rb, sizeof(value));
-			if (!sample) {
-				op_err = errno ? -errno : -1;
-				continue;
+			sleep(10);
+
+			if (rb) {
+				void *sample = user_ring_buffer__reserve(rb, sizeof(value));
+				if (!sample) {
+					cur_result = errno ? -errno : -1;
+					op_err = cur_result;
+				} else {
+					memcpy(sample, &value, sizeof(value));
+					user_ring_buffer__submit(rb, sample);
+				}
 			}
 
-			memcpy(sample, &value, sizeof(value));
-			user_ring_buffer__submit(rb, sample);
+			if (pos < map_json_size - 1) {
+				if (i > 0) {
+					n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos), ",\n");
+					if (n > 0) pos += n;
+				}
+				n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+					"                                    "
+					"{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+					"\"Operation Result\" : %d, \"Samples\" : 0, \"Bytes\" : 0, "
+					"\"Available\" : 0, \"Ring Size\" : 0, \"Error Code\" : %d, "
+					"\"Error Message\" : \"%s\" }",
+					i, mode, !setup_err, cur_result,
+					op_err, op_err ? strerror(-op_err) : "No error information");
+				if (n > 0) pos += n;
+			}
 		}
 
-		user_ring_buffer__free(rb);
+		if (rb)
+			user_ring_buffer__free(rb);
 	}
+
+	if (pos < map_json_size - 1) {
+		n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+			"\n                                ]\n"
+			"                      }\n"
+			"        }");
+		if (n > 0) pos += n;
+	}
+	if (pos < map_json_size)
+		map_json_buf[pos] = '\0';
 
 	return op_err;
 }
 
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
-					     int *attached, int *skipped, int *maps, int *ring_maps)
+					     int *attached, int *skipped, int *maps, int *ring_maps,
+					     char *maps_json_buf, int maps_json_size)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -188,11 +273,15 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	size_t link_count = 0;
 	int err = 0;
 	size_t i;
+	int maps_pos = 0;
 
 	*attached = 0;
 	*skipped = 0;
 	*maps = 0;
 	*ring_maps = 0;
+
+	if (maps_json_buf && maps_json_size > 0)
+		maps_json_buf[0] = '\0';
 
 	if (!ops)
 		return -ENOENT;
@@ -235,16 +324,42 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 
 	bpf_object__for_each_map(map, obj) {
 		int map_type = (int)bpf_map__type(map);
+		const char *map_name = bpf_map__name(map);
+		char map_json[2048];
+		int n;
 
 		(*maps)++;
 		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
 			continue;
 
 		(*ring_maps)++;
-		err = netdata_core_test_ringbuf_map(map, iterations);
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			if (maps_pos > 0) {
+				n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), ",\n");
+				if (n > 0) maps_pos += n;
+			}
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos),
+				"        \"%s\" : ", map_name);
+			if (n > 0) maps_pos += n;
+		}
+
+		map_json[0] = '\0';
+		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
+			if (n > 0) maps_pos += n;
+			if (maps_pos < maps_json_size)
+				maps_json_buf[maps_pos] = '\0';
+		}
+
 		if (err)
 			goto out;
 	}
+
+	if (maps_json_buf && maps_pos < maps_json_size)
+		maps_json_buf[maps_pos] = '\0';
 
 out:
 	for (i = 0; i < link_count; i++)
@@ -331,6 +446,7 @@ type aggregateResult struct {
 	exitCode int
 	command  string
 	detail   string
+	mapsJSON string
 }
 
 type aggregateState struct {
@@ -435,6 +551,9 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	jsonWriteString(out, result.command)
 	_, _ = io.WriteString(out, ",\n      \"detail\": ")
 	jsonWriteString(out, result.detail)
+	if result.mapsJSON != "" {
+		_, _ = fmt.Fprintf(out, ",\n      \"maps\": {\n%s\n      }", result.mapsJSON)
+	}
 	_, _ = io.WriteString(out, "\n    }")
 }
 
@@ -538,6 +657,7 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	skipped := C.int(0)
 	maps := C.int(0)
 	ringMaps := C.int(0)
+	var mapsBuf [4096]C.char
 	errCode := int(C.netdata_core_run_buffer_skel_test(
 		cName,
 		cCtrl,
@@ -547,17 +667,22 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		&skipped,
 		&maps,
 		&ringMaps,
+		&mapsBuf[0],
+		C.int(len(mapsBuf)),
 	))
+	mapsJSON := C.GoString(&mapsBuf[0])
 	if errCode != 0 {
 		result.status = "Fail"
 		result.exitCode = errCode
 		result.detail = fmt.Sprintf("Buffer skeleton test failed with error %d.", errCode)
+		result.mapsJSON = mapsJSON
 		return result, 1
 	}
 
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
 		int(attached), int(skipped), int(maps), int(ringMaps))
+	result.mapsJSON = mapsJSON
 	return result, 0
 }
 
