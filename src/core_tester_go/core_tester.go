@@ -4,9 +4,19 @@ package main
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#include "cachestat_buffer.skel.h"
+#include "dc_buffer.skel.h"
+#include "dns_buffer.skel.h"
+#include "fd_buffer.skel.h"
 #include "netdata_core_loader.h"
+#include "oomkill_buffer.skel.h"
+#include "process_buffer.skel.h"
+#include "shm_buffer.skel.h"
+#include "swap_buffer.skel.h"
+#include "vfs_buffer.skel.h"
 
 struct netdata_core_ringbuf_stats {
 	size_t samples;
@@ -26,120 +36,223 @@ static int netdata_core_ringbuf_sample_cb(void *ctx, void *data, size_t size)
 	return 0;
 }
 
-static struct bpf_object *netdata_core_bpf_open(const char *path)
+struct netdata_core_buffer_skel_base {
+	struct bpf_object_skeleton *skeleton;
+	struct bpf_object *obj;
+};
+
+struct netdata_core_buffer_skel_ops {
+	const char *name;
+	void *(*open)(void);
+	int (*load)(void *skel);
+	void (*destroy)(void *skel);
+};
+
+#define DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(prefix)                                 \
+	static void *netdata_core_open_##prefix(void)                                   \
+	{                                                                               \
+		return prefix##_bpf__open();                                                \
+	}                                                                               \
+                                                                                    \
+	static int netdata_core_load_##prefix(void *skel)                               \
+	{                                                                               \
+		return prefix##_bpf__load(skel);                                            \
+	}                                                                               \
+                                                                                    \
+	static void netdata_core_destroy_##prefix(void *skel)                           \
+	{                                                                               \
+		prefix##_bpf__destroy(skel);                                                \
+	}
+
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(cachestat_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dc_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_buffer)
+
+static const struct netdata_core_buffer_skel_ops netdata_core_buffer_skel_ops[] = {
+	{ "cachestat", netdata_core_open_cachestat_buffer, netdata_core_load_cachestat_buffer, netdata_core_destroy_cachestat_buffer },
+	{ "dc", netdata_core_open_dc_buffer, netdata_core_load_dc_buffer, netdata_core_destroy_dc_buffer },
+	{ "dns", netdata_core_open_dns_buffer, netdata_core_load_dns_buffer, netdata_core_destroy_dns_buffer },
+	{ "fd", netdata_core_open_fd_buffer, netdata_core_load_fd_buffer, netdata_core_destroy_fd_buffer },
+	{ "oomkill", netdata_core_open_oomkill_buffer, netdata_core_load_oomkill_buffer, netdata_core_destroy_oomkill_buffer },
+	{ "process", netdata_core_open_process_buffer, netdata_core_load_process_buffer, netdata_core_destroy_process_buffer },
+	{ "shm", netdata_core_open_shm_buffer, netdata_core_load_shm_buffer, netdata_core_destroy_shm_buffer },
+	{ "swap", netdata_core_open_swap_buffer, netdata_core_load_swap_buffer, netdata_core_destroy_swap_buffer },
+	{ "vfs", netdata_core_open_vfs_buffer, netdata_core_load_vfs_buffer, netdata_core_destroy_vfs_buffer },
+};
+
+static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_ops(const char *name)
 {
-	return bpf_object__open_file(path, NULL);
+	size_t i;
+
+	for (i = 0; i < sizeof(netdata_core_buffer_skel_ops) / sizeof(netdata_core_buffer_skel_ops[0]); i++) {
+		if (!strcmp(netdata_core_buffer_skel_ops[i].name, name))
+			return &netdata_core_buffer_skel_ops[i];
+	}
+
+	return NULL;
 }
 
-static int netdata_core_libbpf_get_error(const void *ptr)
+static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
-	return (int)libbpf_get_error(ptr);
+	struct bpf_map *map;
+	int fd;
+	unsigned long long values[] = { 1, (unsigned long long)map_level, 0, 0, 0, 0 };
+	unsigned int i;
+	unsigned int max_entries;
+
+	if (!ctrl_name || !ctrl_name[0])
+		return;
+
+	map = bpf_object__find_map_by_name(obj, ctrl_name);
+	if (!map)
+		return;
+
+	fd = bpf_map__fd(map);
+	max_entries = bpf_map__max_entries(map);
+	for (i = 0; i < max_entries && i < sizeof(values) / sizeof(values[0]); i++)
+		bpf_map_update_elem(fd, &i, &values[i], 0);
 }
 
-static int netdata_core_bpf_load(struct bpf_object *obj)
+static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations)
 {
-	return bpf_object__load(obj);
+	int map_type = (int)bpf_map__type(map);
+	int fd = bpf_map__fd(map);
+	int op_err = 0;
+	int i;
+
+	if (iterations < 1)
+		iterations = 1;
+
+	if (map_type == BPF_MAP_TYPE_RINGBUF) {
+		struct netdata_core_ringbuf_stats stats = { 0 };
+		struct ring_buffer *rb = ring_buffer__new(fd, netdata_core_ringbuf_sample_cb, &stats, NULL);
+		int setup_err = (int)libbpf_get_error(rb);
+
+		if (setup_err)
+			return setup_err;
+
+		for (i = 0; i < iterations; i++) {
+			sleep(1);
+			int ret = ring_buffer__poll(rb, 0);
+			if (ret < 0)
+				op_err = ret;
+		}
+
+		ring_buffer__free(rb);
+		return op_err;
+	}
+
+	if (map_type == BPF_MAP_TYPE_USER_RINGBUF) {
+		struct user_ring_buffer *rb = user_ring_buffer__new(fd, NULL);
+		int setup_err = (int)libbpf_get_error(rb);
+
+		if (setup_err)
+			return setup_err;
+
+		for (i = 0; i < iterations; i++) {
+			unsigned long long value = (unsigned long long)i + 1;
+			void *sample;
+
+			sleep(1);
+			sample = user_ring_buffer__reserve(rb, sizeof(value));
+			if (!sample) {
+				op_err = errno ? -errno : -1;
+				continue;
+			}
+
+			memcpy(sample, &value, sizeof(value));
+			user_ring_buffer__submit(rb, sample);
+		}
+
+		user_ring_buffer__free(rb);
+	}
+
+	return op_err;
 }
 
-static void netdata_core_bpf_close(struct bpf_object *obj)
+static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
+					     int *attached, int *skipped, int *maps, int *ring_maps)
 {
-	bpf_object__close(obj);
-}
+	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
+	struct bpf_link *links[64] = { 0 };
+	struct bpf_object *obj;
+	struct bpf_program *prog;
+	struct bpf_map *map;
+	void *skel = NULL;
+	size_t link_count = 0;
+	int err = 0;
+	size_t i;
 
-static struct bpf_program *netdata_core_first_program(struct bpf_object *obj)
-{
-	return bpf_object__next_program(obj, NULL);
-}
+	*attached = 0;
+	*skipped = 0;
+	*maps = 0;
+	*ring_maps = 0;
 
-static struct bpf_program *netdata_core_next_program(struct bpf_object *obj, struct bpf_program *prev)
-{
-	return bpf_object__next_program(obj, prev);
-}
+	if (!ops)
+		return -ENOENT;
 
-static int netdata_core_program_type(const struct bpf_program *prog)
-{
-	return (int)bpf_program__type(prog);
-}
+	skel = ops->open();
+	err = (int)libbpf_get_error(skel);
+	if (err) {
+		skel = NULL;
+		goto out;
+	}
 
-static struct bpf_link *netdata_core_program_attach(struct bpf_program *prog)
-{
-	return bpf_program__attach(prog);
-}
+	obj = ((struct netdata_core_buffer_skel_base *)skel)->obj;
+	err = ops->load(skel);
+	if (err)
+		goto out;
 
-static void netdata_core_link_destroy(struct bpf_link *link)
-{
-	bpf_link__destroy(link);
-}
+	netdata_core_fill_ctrl_map(obj, ctrl_name, map_level);
 
-static struct bpf_map *netdata_core_first_map(struct bpf_object *obj)
-{
-	return bpf_object__next_map(obj, NULL);
-}
+	bpf_object__for_each_program(prog, obj) {
+		struct bpf_link *link;
 
-static struct bpf_map *netdata_core_next_map(struct bpf_object *obj, struct bpf_map *prev)
-{
-	return bpf_object__next_map(obj, prev);
-}
+		if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
+			(*skipped)++;
+			continue;
+		}
 
-static struct bpf_map *netdata_core_find_map(struct bpf_object *obj, const char *name)
-{
-	return bpf_object__find_map_by_name(obj, name);
-}
+		if (link_count >= sizeof(links) / sizeof(links[0])) {
+			err = -ENOSPC;
+			goto out;
+		}
 
-static int netdata_core_map_fd(const struct bpf_map *map)
-{
-	return bpf_map__fd(map);
-}
+		link = bpf_program__attach(prog);
+		err = (int)libbpf_get_error(link);
+		if (err)
+			goto out;
 
-static int netdata_core_map_type(const struct bpf_map *map)
-{
-	return (int)bpf_map__type(map);
-}
+		links[link_count++] = link;
+		(*attached)++;
+	}
 
-static unsigned int netdata_core_map_max_entries(const struct bpf_map *map)
-{
-	return bpf_map__max_entries(map);
-}
+	bpf_object__for_each_map(map, obj) {
+		int map_type = (int)bpf_map__type(map);
 
-static int netdata_core_map_update_u64(int fd, unsigned int key, unsigned long long value)
-{
-	return bpf_map_update_elem(fd, &key, &value, 0);
-}
+		(*maps)++;
+		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
+			continue;
 
-static struct ring_buffer *netdata_core_ring_buffer_new(int fd, struct netdata_core_ringbuf_stats *stats)
-{
-	return ring_buffer__new(fd, netdata_core_ringbuf_sample_cb, stats, NULL);
-}
+		(*ring_maps)++;
+		err = netdata_core_test_ringbuf_map(map, iterations);
+		if (err)
+			goto out;
+	}
 
-static int netdata_core_ring_buffer_poll(struct ring_buffer *rb)
-{
-	return ring_buffer__poll(rb, 0);
-}
+out:
+	for (i = 0; i < link_count; i++)
+		bpf_link__destroy(links[i]);
+	if (skel)
+		ops->destroy(skel);
 
-static void netdata_core_ring_buffer_free(struct ring_buffer *rb)
-{
-	ring_buffer__free(rb);
-}
-
-static struct user_ring_buffer *netdata_core_user_ring_buffer_new(int fd)
-{
-	return user_ring_buffer__new(fd, NULL);
-}
-
-static int netdata_core_user_ring_buffer_submit_u64(struct user_ring_buffer *rb, unsigned long long value)
-{
-	void *sample = user_ring_buffer__reserve(rb, sizeof(value));
-	if (!sample)
-		return errno ? -errno : -1;
-
-	memcpy(sample, &value, sizeof(value));
-	user_ring_buffer__submit(rb, sample);
-	return 0;
-}
-
-static void netdata_core_user_ring_buffer_free(struct user_ring_buffer *rb)
-{
-	user_ring_buffer__free(rb);
+	return err;
 }
 */
 import "C"
@@ -149,10 +262,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"unsafe"
 )
 
@@ -164,10 +275,6 @@ const (
 
 	pidMin = 0
 	pidMax = 3
-
-	bpfMapTypeRingBuf     = uint32(C.BPF_MAP_TYPE_RINGBUF)
-	bpfMapTypeUserRingBuf = uint32(C.BPF_MAP_TYPE_USER_RINGBUF)
-	bpfProgTypeSocket     = uint32(C.BPF_PROG_TYPE_SOCKET_FILTER)
 )
 
 const (
@@ -399,99 +506,14 @@ func executeTest(state aggregateState, test aggregateTestCase, mode uint, pid in
 	return result, exitCode
 }
 
-func resolveBufferObjectPath(state aggregateState, test aggregateTestCase) (string, error) {
-	candidates := []string{}
-	if state.testsDir != "" {
-		candidates = append(candidates, filepath.Join(state.testsDir, test.name+"_buffer.bpf.o"))
-	}
-	candidates = append(candidates,
-		filepath.Join(".", test.name+"_buffer.bpf.o"),
-		filepath.Join("..", test.name+"_buffer.bpf.o"),
-	)
-
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-
-	return filepath.Join(".", test.name+"_buffer.bpf.o"), os.ErrNotExist
-}
-
-func fillBufferCtrl(obj *C.struct_bpf_object, ctrlName string, mapLevel int) {
-	if ctrlName == "" {
-		return
-	}
-
-	cName := C.CString(ctrlName)
-	defer C.free(unsafe.Pointer(cName))
-
-	m := C.netdata_core_find_map(obj, cName)
-	if m == nil {
-		return
-	}
-
-	fd := int(C.netdata_core_map_fd(m))
-	maxEntries := int(C.netdata_core_map_max_entries(m))
-	values := []uint64{1, uint64(mapLevel), 0, 0, 0, 0}
-	for i := 0; i < maxEntries && i < len(values); i++ {
-		C.netdata_core_map_update_u64(C.int(fd), C.uint(i), C.ulonglong(values[i]))
-	}
-}
-
-func testBufferRingMap(m *C.struct_bpf_map, iterations int) int {
-	mapType := uint32(C.netdata_core_map_type(m))
-	fd := C.netdata_core_map_fd(m)
-	setupErr := 0
-	opErr := 0
-
-	if iterations < 1 {
-		iterations = 1
-	}
-
-	if mapType == bpfMapTypeRingBuf {
-		stats := &C.struct_netdata_core_ringbuf_stats{}
-		rb := C.netdata_core_ring_buffer_new(fd, stats)
-		setupErr = int(C.netdata_core_libbpf_get_error(unsafe.Pointer(rb)))
-		if setupErr != 0 {
-			return setupErr
-		}
-		defer C.netdata_core_ring_buffer_free(rb)
-
-		for i := 0; i < iterations; i++ {
-			time.Sleep(time.Second)
-			ret := int(C.netdata_core_ring_buffer_poll(rb))
-			if ret < 0 {
-				opErr = ret
-			}
-		}
-		return opErr
-	}
-
-	if mapType == bpfMapTypeUserRingBuf {
-		rb := C.netdata_core_user_ring_buffer_new(fd)
-		setupErr = int(C.netdata_core_libbpf_get_error(unsafe.Pointer(rb)))
-		if setupErr != 0 {
-			return setupErr
-		}
-		defer C.netdata_core_user_ring_buffer_free(rb)
-
-		for i := 0; i < iterations; i++ {
-			time.Sleep(time.Second)
-			ret := int(C.netdata_core_user_ring_buffer_submit_u64(rb, C.ulonglong(i+1)))
-			if ret < 0 {
-				opErr = ret
-			}
-		}
-	}
-
-	return opErr
-}
-
 func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateResult, int) {
 	result := initResult(test)
 	result.mode = "buffer"
-	result.binary = test.name + "_buffer.bpf.o"
+	result.binary = test.name + "_buffer.skel.h"
+	result.command = test.name + "_buffer skeleton"
+	if state.selectedPID >= 0 {
+		result.pid = state.selectedPID
+	}
 
 	if !test.bufferSupported {
 		result.status = "Unavailable"
@@ -499,89 +521,43 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		return result, 0
 	}
 
-	path, err := resolveBufferObjectPath(state, test)
-	result.command = path
-	if err != nil {
-		result.status = "Fail"
-		result.exitCode = 1
-		result.detail = "Buffer BPF object not found."
-		return result, 1
-	}
-
-	_, _ = fmt.Fprintf(os.Stderr, "Running buffer object test %s\n", path)
-
-	cPath := C.CString(path)
-	defer C.free(unsafe.Pointer(cPath))
-
-	obj := C.netdata_core_bpf_open(cPath)
-	if errCode := int(C.netdata_core_libbpf_get_error(unsafe.Pointer(obj))); errCode != 0 {
-		result.status = "Fail"
-		result.exitCode = errCode
-		result.detail = fmt.Sprintf("Open failed with error %d.", errCode)
-		return result, 1
-	}
-	defer C.netdata_core_bpf_close(obj)
-
-	if errCode := int(C.netdata_core_bpf_load(obj)); errCode != 0 {
-		result.status = "Fail"
-		result.exitCode = errCode
-		result.detail = fmt.Sprintf("Load failed with error %d.", errCode)
-		return result, 1
-	}
-
 	mapLevel := state.selectedPID
 	if mapLevel < 0 {
 		mapLevel = pidMin
 	}
-	fillBufferCtrl(obj, test.bufferCtrl, mapLevel)
 
-	links := []*C.struct_bpf_link{}
-	skipped := 0
-	for prog := C.netdata_core_first_program(obj); prog != nil; prog = C.netdata_core_next_program(obj, prog) {
-		if uint32(C.netdata_core_program_type(prog)) == bpfProgTypeSocket {
-			skipped++
-			continue
-		}
+	_, _ = fmt.Fprintf(os.Stderr, "Running buffer skeleton test %s\n", result.command)
 
-		link := C.netdata_core_program_attach(prog)
-		if errCode := int(C.netdata_core_libbpf_get_error(unsafe.Pointer(link))); errCode != 0 {
-			for _, attached := range links {
-				C.netdata_core_link_destroy(attached)
-			}
-			result.status = "Fail"
-			result.exitCode = errCode
-			result.detail = fmt.Sprintf("Attach failed with error %d.", errCode)
-			return result, 1
-		}
-		links = append(links, link)
-	}
-	defer func() {
-		for _, link := range links {
-			C.netdata_core_link_destroy(link)
-		}
-	}()
+	cName := C.CString(test.name)
+	defer C.free(unsafe.Pointer(cName))
 
-	maps := 0
-	ringMaps := 0
-	for m := C.netdata_core_first_map(obj); m != nil; m = C.netdata_core_next_map(obj, m) {
-		maps++
-		mapType := uint32(C.netdata_core_map_type(m))
-		if mapType != bpfMapTypeRingBuf && mapType != bpfMapTypeUserRingBuf {
-			continue
-		}
+	cCtrl := C.CString(test.bufferCtrl)
+	defer C.free(unsafe.Pointer(cCtrl))
 
-		ringMaps++
-		if errCode := testBufferRingMap(m, state.bufferIterations); errCode != 0 {
-			result.status = "Fail"
-			result.exitCode = errCode
-			result.detail = fmt.Sprintf("Ring buffer map test failed with error %d.", errCode)
-			return result, 1
-		}
+	attached := C.int(0)
+	skipped := C.int(0)
+	maps := C.int(0)
+	ringMaps := C.int(0)
+	errCode := int(C.netdata_core_run_buffer_skel_test(
+		cName,
+		cCtrl,
+		C.int(mapLevel),
+		C.int(state.bufferIterations),
+		&attached,
+		&skipped,
+		&maps,
+		&ringMaps,
+	))
+	if errCode != 0 {
+		result.status = "Fail"
+		result.exitCode = errCode
+		result.detail = fmt.Sprintf("Buffer skeleton test failed with error %d.", errCode)
+		return result, 1
 	}
 
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
-		len(links), skipped, maps, ringMaps)
+		int(attached), int(skipped), int(maps), int(ringMaps))
 	return result, 0
 }
 

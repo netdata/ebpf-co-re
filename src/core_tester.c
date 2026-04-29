@@ -13,7 +13,16 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
+#include "cachestat_buffer.skel.h"
+#include "dc_buffer.skel.h"
+#include "dns_buffer.skel.h"
+#include "fd_buffer.skel.h"
 #include "netdata_core_loader.h"
+#include "oomkill_buffer.skel.h"
+#include "process_buffer.skel.h"
+#include "shm_buffer.skel.h"
+#include "swap_buffer.skel.h"
+#include "vfs_buffer.skel.h"
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -124,6 +133,56 @@ typedef struct aggregate_state {
     int buffer_iterations;
     const char *tests_dir;
 } aggregate_state_t;
+
+typedef struct buffer_skel_base {
+    struct bpf_object_skeleton *skeleton;
+    struct bpf_object *obj;
+} buffer_skel_base_t;
+
+typedef struct buffer_skel_ops {
+    const char *name;
+    void *(*open)(void);
+    int (*load)(void *skel);
+    void (*destroy)(void *skel);
+} buffer_skel_ops_t;
+
+#define DEFINE_BUFFER_SKEL_OPS(prefix)                                              \
+    static void *open_##prefix(void)                                                \
+    {                                                                               \
+        return prefix##_bpf__open();                                                \
+    }                                                                               \
+                                                                                    \
+    static int load_##prefix(void *skel)                                            \
+    {                                                                               \
+        return prefix##_bpf__load(skel);                                            \
+    }                                                                               \
+                                                                                    \
+    static void destroy_##prefix(void *skel)                                        \
+    {                                                                               \
+        prefix##_bpf__destroy(skel);                                                \
+    }
+
+DEFINE_BUFFER_SKEL_OPS(cachestat_buffer)
+DEFINE_BUFFER_SKEL_OPS(dc_buffer)
+DEFINE_BUFFER_SKEL_OPS(dns_buffer)
+DEFINE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_BUFFER_SKEL_OPS(oomkill_buffer)
+DEFINE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_BUFFER_SKEL_OPS(shm_buffer)
+DEFINE_BUFFER_SKEL_OPS(swap_buffer)
+DEFINE_BUFFER_SKEL_OPS(vfs_buffer)
+
+static const buffer_skel_ops_t buffer_skel_ops[] = {
+    { "cachestat", open_cachestat_buffer, load_cachestat_buffer, destroy_cachestat_buffer },
+    { "dc", open_dc_buffer, load_dc_buffer, destroy_dc_buffer },
+    { "dns", open_dns_buffer, load_dns_buffer, destroy_dns_buffer },
+    { "fd", open_fd_buffer, load_fd_buffer, destroy_fd_buffer },
+    { "oomkill", open_oomkill_buffer, load_oomkill_buffer, destroy_oomkill_buffer },
+    { "process", open_process_buffer, load_process_buffer, destroy_process_buffer },
+    { "shm", open_shm_buffer, load_shm_buffer, destroy_shm_buffer },
+    { "swap", open_swap_buffer, load_swap_buffer, destroy_swap_buffer },
+    { "vfs", open_vfs_buffer, load_vfs_buffer, destroy_vfs_buffer },
+};
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
@@ -384,26 +443,16 @@ static int map_is_ringbuf(enum bpf_map_type type)
     return type == BPF_MAP_TYPE_RINGBUF || type == BPF_MAP_TYPE_USER_RINGBUF;
 }
 
-static int resolve_buffer_object_path(const aggregate_state_t *state, const aggregate_test_case_t *test,
-                                      char *path, size_t path_size)
+static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 {
-    const char *dirs[] = { ".", "..", NULL };
     size_t i;
 
-    if (state->tests_dir) {
-        snprintf(path, path_size, "%s/%s_buffer.bpf.o", state->tests_dir, test->name);
-        if (!access(path, R_OK))
-            return 0;
+    for (i = 0; i < sizeof(buffer_skel_ops) / sizeof(buffer_skel_ops[0]); i++) {
+        if (!strcmp(buffer_skel_ops[i].name, name))
+            return &buffer_skel_ops[i];
     }
 
-    for (i = 0; dirs[i]; i++) {
-        snprintf(path, path_size, "%s/%s_buffer.bpf.o", dirs[i], test->name);
-        if (!access(path, R_OK))
-            return 0;
-    }
-
-    snprintf(path, path_size, "%s_buffer.bpf.o", test->name);
-    return -ENOENT;
+    return NULL;
 }
 
 static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
@@ -510,7 +559,8 @@ static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **link
 static int execute_buffer_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
                                aggregate_result_t *result)
 {
-    char path[512];
+    const buffer_skel_ops_t *ops;
+    void *skel = NULL;
     struct bpf_object *obj = NULL;
     struct bpf_map *map;
     struct bpf_link *links[64] = { 0 };
@@ -523,7 +573,10 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
 
     init_result(result, test);
     snprintf(result->mode, sizeof(result->mode), "%s", "buffer");
-    snprintf(result->binary, sizeof(result->binary), "%s_buffer.bpf.o", test->name);
+    snprintf(result->binary, sizeof(result->binary), "%s_buffer.skel.h", test->name);
+    snprintf(result->command, sizeof(result->command), "%s_buffer skeleton", test->name);
+    if (state->selected_pid >= 0)
+        result->pid = state->selected_pid;
 
     if (!test->buffer_supported) {
         snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
@@ -531,24 +584,26 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
         return 0;
     }
 
-    if (resolve_buffer_object_path(state, test, path, sizeof(path))) {
+    (void)state->tests_dir;
+
+    ops = find_buffer_skel_ops(test->name);
+    if (!ops) {
         snprintf(result->status, sizeof(result->status), "%s", "Fail");
-        snprintf(result->detail, sizeof(result->detail), "%s", "Buffer BPF object not found.");
-        snprintf(result->command, sizeof(result->command), "%.255s", path);
+        snprintf(result->detail, sizeof(result->detail), "%s", "Buffer skeleton is not compiled into this tester.");
         return 1;
     }
 
-    snprintf(result->command, sizeof(result->command), "%.255s", path);
-    fprintf(stderr, "Running buffer object test %s\n", path);
+    fprintf(stderr, "Running buffer skeleton test %s\n", result->command);
 
-    obj = bpf_object__open_file(path, NULL);
-    err = libbpf_get_error(obj);
+    skel = ops->open();
+    err = libbpf_get_error(skel);
     if (err) {
-        obj = NULL;
+        skel = NULL;
         goto fail;
     }
+    obj = ((buffer_skel_base_t *)skel)->obj;
 
-    err = bpf_object__load(obj);
+    err = ops->load(skel);
     if (err)
         goto fail;
 
@@ -570,7 +625,7 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
 
     for (i = 0; i < attached; i++)
         bpf_link__destroy(links[i]);
-    bpf_object__close(obj);
+    ops->destroy(skel);
 
     snprintf(result->status, sizeof(result->status), "%s", "Success");
     snprintf(result->detail, sizeof(result->detail),
@@ -581,11 +636,11 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
 fail:
     for (i = 0; i < attached; i++)
         bpf_link__destroy(links[i]);
-    if (obj)
-        bpf_object__close(obj);
+    if (skel)
+        ops->destroy(skel);
 
     snprintf(result->status, sizeof(result->status), "%s", "Fail");
-    snprintf(result->detail, sizeof(result->detail), "Buffer object test failed with error %d.", err);
+    snprintf(result->detail, sizeof(result->detail), "Buffer skeleton test failed with error %d.", err);
     result->exit_code = err ? err : 1;
     return 1;
 }
