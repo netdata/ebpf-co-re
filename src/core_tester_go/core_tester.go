@@ -7,11 +7,13 @@ package main
 #include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#include "netdata_core_loader.h"
+/* BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728). */
+#if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
 #include "dc_buffer.skel.h"
 #include "dns_buffer.skel.h"
 #include "fd_buffer.skel.h"
-#include "netdata_core_loader.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
 #include "shm_buffer.skel.h"
@@ -450,6 +452,26 @@ out:
 
 	return err;
 }
+#else
+static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name,
+	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
+	char *maps_json_buf, int maps_json_size)
+{
+	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
+	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)maps_json_buf; (void)maps_json_size;
+	return -ENOSYS;
+}
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
+
+static int netdata_core_ringbuf_supported(void)
+{
+#if MY_LINUX_VERSION_CODE >= 329728
+	return 1;
+#else
+	return 0;
+#endif
+}
 */
 import "C"
 
@@ -718,6 +740,12 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	if !test.bufferSupported {
 		result.status = "Unavailable"
 		result.detail = "Collector has no CO-RE buffer object."
+		return result, 0
+	}
+
+	if C.netdata_core_ringbuf_supported() == 0 {
+		result.status = "Unavailable"
+		result.detail = "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8."
 		return result, 0
 	}
 

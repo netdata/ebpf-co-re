@@ -428,6 +428,7 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
     return exit_code;
 }
 
+#if MY_LINUX_VERSION_CODE >= 329728
 typedef struct ringbuf_stats {
     size_t samples;
     size_t bytes;
@@ -461,7 +462,6 @@ static const char *format_error(int err, char *buf, size_t size)
     return buf;
 }
 
-#if MY_LINUX_VERSION_CODE >= 329728
 static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 {
     size_t i;
@@ -473,7 +473,6 @@ static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 
     return NULL;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
@@ -714,7 +713,6 @@ static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **link
     return 0;
 }
 
-#if MY_LINUX_VERSION_CODE >= 329728
 static int execute_buffer_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
                                aggregate_result_t *result)
 {
