@@ -13,16 +13,19 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
+#include "netdata_core_loader.h"
+/* BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728). */
+#if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
 #include "dc_buffer.skel.h"
 #include "dns_buffer.skel.h"
 #include "fd_buffer.skel.h"
-#include "netdata_core_loader.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
 #include "shm_buffer.skel.h"
 #include "swap_buffer.skel.h"
 #include "vfs_buffer.skel.h"
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -163,6 +166,7 @@ typedef struct buffer_skel_ops {
         prefix##_bpf__destroy(skel);                                                \
     }
 
+#if MY_LINUX_VERSION_CODE >= 329728
 DEFINE_BUFFER_SKEL_OPS(cachestat_buffer)
 DEFINE_BUFFER_SKEL_OPS(dc_buffer)
 DEFINE_BUFFER_SKEL_OPS(dns_buffer)
@@ -184,6 +188,7 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
     { "swap", open_swap_buffer, load_swap_buffer, destroy_swap_buffer },
     { "vfs", open_vfs_buffer, load_vfs_buffer, destroy_vfs_buffer },
 };
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
@@ -456,6 +461,7 @@ static const char *format_error(int err, char *buf, size_t size)
     return buf;
 }
 
+#if MY_LINUX_VERSION_CODE >= 329728
 static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 {
     size_t i;
@@ -467,6 +473,7 @@ static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
 
     return NULL;
 }
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
@@ -707,6 +714,7 @@ static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **link
     return 0;
 }
 
+#if MY_LINUX_VERSION_CODE >= 329728
 static int execute_buffer_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
                                aggregate_result_t *result)
 {
@@ -822,6 +830,7 @@ fail:
     result->exit_code = err ? err : 1;
     return 1;
 }
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 static void print_help(const char *name)
 {
@@ -1058,7 +1067,13 @@ int main(int argc, char **argv)
             if (!test->buffer_supported)
                 continue;
 
+#if MY_LINUX_VERSION_CODE >= 329728
             failures += execute_buffer_test(&state, test, &results[result_count]) != 0;
+#else
+            record_unavailable(&results[result_count], test,
+                               "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8.");
+            unavailable++;
+#endif
             write_result(report, &results[result_count], &first);
             result_count++;
             continue;
