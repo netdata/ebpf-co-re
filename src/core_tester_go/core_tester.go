@@ -8,7 +8,7 @@ package main
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include "netdata_core_loader.h"
-/* BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728). */
+// BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728).
 #if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
 #include "dc_buffer.skel.h"
