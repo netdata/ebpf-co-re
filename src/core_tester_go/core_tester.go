@@ -260,6 +260,76 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	return op_err;
 }
 
+// Check whether a kernel symbol is present in /proc/kallsyms.
+static int netdata_core_symbol_in_kallsyms(const char *name)
+{
+	FILE *f;
+	char line[512];
+	char sym[256];
+	int found = 0;
+
+	f = fopen("/proc/kallsyms", "r");
+	if (!f)
+		return 1; // can't verify; assume present to avoid false disabling
+
+	while (!found && fgets(line, (int)sizeof(line), f)) {
+		if (sscanf(line, "%*x %*c %255s", sym) == 1)
+			found = (strcmp(sym, name) == 0);
+	}
+	fclose(f);
+	return found;
+}
+
+// Mutually exclusive kprobe target groups in priority order (first found wins).
+// Mirrors the compile-time #if chain in kernel-collector/kernel/cachestat_buffer_kern.c
+// and swap_buffer_kern.c, resolved at runtime via kallsyms for CO-RE builds.
+static const char * const netdata_core_kprobe_groups[][4] = {
+	{ "__folio_mark_dirty", "__set_page_dirty", "account_page_dirtied", NULL },
+	{ "swap_read_folio",    "swap_readpage",    NULL,                   NULL },
+	{ "__swap_writepage",   "swap_writepage",   NULL,                   NULL },
+	{ NULL,                 NULL,               NULL,                   NULL }
+};
+
+static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
+{
+	struct bpf_program *prog;
+	int g, i;
+
+	// For each group, pick the highest-priority existing symbol and disable all others.
+	for (g = 0; netdata_core_kprobe_groups[g][0]; g++) {
+		const char *winner = NULL;
+		const char *fn;
+		for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+			if (netdata_core_symbol_in_kallsyms(netdata_core_kprobe_groups[g][i])) {
+				winner = netdata_core_kprobe_groups[g][i];
+				break;
+			}
+		}
+		bpf_object__for_each_program(prog, obj) {
+			const char *sec = bpf_program__section_name(prog);
+			if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+				continue;
+			fn = sec + 7;
+			for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+				if (strcmp(fn, netdata_core_kprobe_groups[g][i]) == 0 &&
+				    (!winner || strcmp(fn, winner) != 0)) {
+					bpf_program__set_autoload(prog, false);
+					break;
+				}
+			}
+		}
+	}
+
+	// Disable any remaining kprobe program whose target still doesn't exist.
+	bpf_object__for_each_program(prog, obj) {
+		const char *sec = bpf_program__section_name(prog);
+		if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+			continue;
+		if (!netdata_core_symbol_in_kallsyms(sec + 7))
+			bpf_program__set_autoload(prog, false);
+	}
+}
+
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 					     int *attached, int *skipped, int *maps, int *ring_maps,
 					     char *maps_json_buf, int maps_json_size)
@@ -294,6 +364,7 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	}
 
 	obj = ((struct netdata_core_buffer_skel_base *)skel)->obj;
+	netdata_core_select_kprobe_programs(obj);
 	err = ops->load(skel);
 	if (err)
 		goto out;
@@ -313,10 +384,20 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 			goto out;
 		}
 
+		// Skip programs disabled before load (missing kprobe targets).
+		if (bpf_program__fd(prog) < 0)
+			continue;
+
 		link = bpf_program__attach(prog);
 		err = (int)libbpf_get_error(link);
-		if (err)
+		if (err) {
+			// Safety net: skip if target still absent at attach time.
+			if (err == -ENOENT) {
+				err = 0;
+				continue;
+			}
 			goto out;
+		}
 
 		links[link_count++] = link;
 		(*attached)++;

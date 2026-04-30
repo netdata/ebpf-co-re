@@ -88,22 +88,33 @@ int netdata_mark_page_accessed_buffer(struct pt_regs *ctx)
     return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0))
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0))
 SEC("kprobe/__folio_mark_dirty")
-#else
+int netdata_folio_mark_dirty_buffer(struct pt_regs *ctx)
+{
+    libnetdata_update_global(&cstat_global, NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED, 1);
+
+    if (!monitor_apps(&cstat_ctrl))
+        return 0;
+
+    struct netdata_cachestat_event_t *ev = bpf_ringbuf_reserve(&cachestat_events, sizeof(*ev), 0);
+    if (!ev)
+        return 0;
+
+    netdata_cachestat_fill_event(ev, &cstat_ctrl);
+    ev->action = NETDATA_CACHESTAT_EVENT_PAGE_DIRTIED;
+
+    bpf_ringbuf_submit(ev, 0);
+    return 0;
+}
+
 SEC("kprobe/__set_page_dirty")
-#endif
 int netdata_set_page_dirty_buffer(struct pt_regs *ctx)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,16,0))
-    /* On 5.15, skip anonymous pages that have no backing store. */
+    /* On 5.15, __set_page_dirty is called for all pages; skip anonymous ones. */
     struct page *page = (struct page *)PT_REGS_PARM1(ctx);
     struct address_space *mapping = _(page->mapping);
     if (!mapping)
         return 0;
-#endif
 
     libnetdata_update_global(&cstat_global, NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED, 1);
 
@@ -121,13 +132,7 @@ int netdata_set_page_dirty_buffer(struct pt_regs *ctx)
     return 0;
 }
 
-#else  /* < 5.15.0 */
-
-#if defined(RHEL_MAJOR) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
-SEC("kprobe/__folio_mark_dirty")
-#else
 SEC("kprobe/account_page_dirtied")
-#endif
 int netdata_account_page_dirtied_buffer(struct pt_regs *ctx)
 {
     libnetdata_update_global(&cstat_global, NETDATA_KEY_CALLS_ACCOUNT_PAGE_DIRTIED, 1);
@@ -145,8 +150,6 @@ int netdata_account_page_dirtied_buffer(struct pt_regs *ctx)
     bpf_ringbuf_submit(ev, 0);
     return 0;
 }
-
-#endif  /* LINUX_VERSION_CODE >= 5.15.0 */
 
 SEC("kprobe/mark_buffer_dirty")
 int netdata_mark_buffer_dirty_buffer(struct pt_regs *ctx)
