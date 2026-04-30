@@ -462,7 +462,7 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 329728 */
+#endif // MY_LINUX_VERSION_CODE >= 329728
 
 static int netdata_core_ringbuf_supported(void)
 {
