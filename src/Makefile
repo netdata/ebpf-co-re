@@ -36,6 +36,24 @@ APPS = cachestat \
        vfs \
        #
 
+BUFFER_APPS = cachestat_buffer \
+              dc_buffer \
+              dns_buffer \
+              fd_buffer \
+              oomkill_buffer \
+              process_buffer \
+              shm_buffer \
+              swap_buffer \
+              vfs_buffer \
+              #
+
+# BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8.
+ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 329728 ; echo $$?),0)
+RINGBUF_SKELS = $(patsubst %,%.skel.h,$(BUFFER_APPS))
+else
+RINGBUF_SKELS =
+endif
+
 AGGREGATE_TESTER = core_tester
 AGGREGATE_TESTER_GO = core_tester_go
 GO ?= go
@@ -71,7 +89,7 @@ dns: dns.o $(DNS_HELPER_OBJ)
 $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
-compress: $(APPS)
+compress: $(APPS) $(RINGBUF_SKELS)
 
 aggregate/%.o: %.c %.skel.h
 	mkdir -p aggregate
@@ -83,10 +101,10 @@ $(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
 $(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
 	ar rcs $@ $^
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ)
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS)
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(wildcard core_tester_go/*.go)
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(wildcard core_tester_go/*.go)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
 	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \

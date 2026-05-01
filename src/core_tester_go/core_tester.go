@@ -2,7 +2,476 @@ package main
 
 /*
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 #include "netdata_core_loader.h"
+// BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728).
+#if MY_LINUX_VERSION_CODE >= 329728
+#include "cachestat_buffer.skel.h"
+#include "dc_buffer.skel.h"
+#include "dns_buffer.skel.h"
+#include "fd_buffer.skel.h"
+#include "oomkill_buffer.skel.h"
+#include "process_buffer.skel.h"
+#include "shm_buffer.skel.h"
+#include "swap_buffer.skel.h"
+#include "vfs_buffer.skel.h"
+
+struct netdata_core_ringbuf_stats {
+	size_t samples;
+	size_t bytes;
+};
+
+static int netdata_core_ringbuf_sample_cb(void *ctx, void *data, size_t size)
+{
+	struct netdata_core_ringbuf_stats *stats = ctx;
+
+	(void)data;
+	if (stats) {
+		stats->samples++;
+		stats->bytes += size;
+	}
+
+	return 0;
+}
+
+struct netdata_core_buffer_skel_base {
+	struct bpf_object_skeleton *skeleton;
+	struct bpf_object *obj;
+};
+
+struct netdata_core_buffer_skel_ops {
+	const char *name;
+	void *(*open)(void);
+	int (*load)(void *skel);
+	void (*destroy)(void *skel);
+};
+
+#define DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(prefix)                                 \
+	static void *netdata_core_open_##prefix(void)                                   \
+	{                                                                               \
+		return prefix##_bpf__open();                                                \
+	}                                                                               \
+                                                                                    \
+	static int netdata_core_load_##prefix(void *skel)                               \
+	{                                                                               \
+		return prefix##_bpf__load(skel);                                            \
+	}                                                                               \
+                                                                                    \
+	static void netdata_core_destroy_##prefix(void *skel)                           \
+	{                                                                               \
+		prefix##_bpf__destroy(skel);                                                \
+	}
+
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(cachestat_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dc_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_buffer)
+
+static const struct netdata_core_buffer_skel_ops netdata_core_buffer_skel_ops[] = {
+	{ "cachestat", netdata_core_open_cachestat_buffer, netdata_core_load_cachestat_buffer, netdata_core_destroy_cachestat_buffer },
+	{ "dc", netdata_core_open_dc_buffer, netdata_core_load_dc_buffer, netdata_core_destroy_dc_buffer },
+	{ "dns", netdata_core_open_dns_buffer, netdata_core_load_dns_buffer, netdata_core_destroy_dns_buffer },
+	{ "fd", netdata_core_open_fd_buffer, netdata_core_load_fd_buffer, netdata_core_destroy_fd_buffer },
+	{ "oomkill", netdata_core_open_oomkill_buffer, netdata_core_load_oomkill_buffer, netdata_core_destroy_oomkill_buffer },
+	{ "process", netdata_core_open_process_buffer, netdata_core_load_process_buffer, netdata_core_destroy_process_buffer },
+	{ "shm", netdata_core_open_shm_buffer, netdata_core_load_shm_buffer, netdata_core_destroy_shm_buffer },
+	{ "swap", netdata_core_open_swap_buffer, netdata_core_load_swap_buffer, netdata_core_destroy_swap_buffer },
+	{ "vfs", netdata_core_open_vfs_buffer, netdata_core_load_vfs_buffer, netdata_core_destroy_vfs_buffer },
+};
+
+static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_ops(const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(netdata_core_buffer_skel_ops) / sizeof(netdata_core_buffer_skel_ops[0]); i++) {
+		if (!strcmp(netdata_core_buffer_skel_ops[i].name, name))
+			return &netdata_core_buffer_skel_ops[i];
+	}
+
+	return NULL;
+}
+
+static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
+{
+	struct bpf_map *map;
+	int fd;
+	unsigned long long values[] = { 1, (unsigned long long)map_level, 0, 0, 0, 0 };
+	unsigned int i;
+	unsigned int max_entries;
+
+	if (!ctrl_name || !ctrl_name[0])
+		return;
+
+	map = bpf_object__find_map_by_name(obj, ctrl_name);
+	if (!map)
+		return;
+
+	fd = bpf_map__fd(map);
+	max_entries = bpf_map__max_entries(map);
+	for (i = 0; i < max_entries && i < sizeof(values) / sizeof(values[0]); i++)
+		bpf_map_update_elem(fd, &i, &values[i], 0);
+}
+
+static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
+					 char *map_json_buf, int map_json_size)
+{
+	int map_type = (int)bpf_map__type(map);
+	int fd = bpf_map__fd(map);
+	unsigned int key_size = (unsigned int)bpf_map__key_size(map);
+	unsigned int value_size = (unsigned int)bpf_map__value_size(map);
+	const char *mode = (map_type == BPF_MAP_TYPE_USER_RINGBUF) ? "user_ringbuf_producer" : "ringbuf_consumer";
+	int setup_err = 0;
+	int op_err = 0;
+	int i;
+	int pos = 0;
+	int n;
+
+	if (iterations < 1)
+		iterations = 1;
+
+	n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+		"{\n"
+		"            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+		"                       \"Type\" : %d,\n"
+		"                       \"FD\" : %d,\n"
+		"                       \"Data\" : [\n",
+		key_size, value_size, map_type, fd);
+	if (n > 0) pos += n;
+
+	if (map_type == BPF_MAP_TYPE_RINGBUF) {
+		struct netdata_core_ringbuf_stats stats = { 0 };
+		struct netdata_core_ringbuf_stats prev = { 0 };
+		struct ring_buffer *rb = ring_buffer__new(fd, netdata_core_ringbuf_sample_cb, &stats, NULL);
+		setup_err = (int)libbpf_get_error(rb);
+		if (setup_err) {
+			rb = NULL;
+			op_err = setup_err;
+		}
+
+		for (i = 0; i < iterations; i++) {
+			size_t iter_samples = 0;
+			size_t iter_bytes = 0;
+			size_t ring_sz = 0;
+			size_t avail = 0;
+			int cur_result = 0;
+
+			sleep(10);
+
+			if (rb) {
+				struct ring *ring = ring_buffer__ring(rb, 0);
+				cur_result = ring_buffer__poll(rb, 0);
+				if (cur_result < 0)
+					op_err = cur_result;
+
+				iter_samples = stats.samples - prev.samples;
+				iter_bytes = stats.bytes - prev.bytes;
+				prev = stats;
+
+				if (ring) {
+					ring_sz = ring__size(ring);
+					avail = ring__avail_data_size(ring);
+				}
+			}
+
+			if (pos < map_json_size - 1) {
+				if (i > 0) {
+					n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos), ",\n");
+					if (n > 0) pos += n;
+				}
+				n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+					"                                    "
+					"{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+					"\"Operation Result\" : %d, \"Samples\" : %zu, \"Bytes\" : %zu, "
+					"\"Available\" : %zu, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+					"\"Error Message\" : \"%s\" }",
+					i, mode, !setup_err, cur_result,
+					iter_samples, iter_bytes, avail, ring_sz,
+					op_err, op_err ? strerror(-op_err) : "No error information");
+				if (n > 0) pos += n;
+			}
+		}
+
+		if (rb)
+			ring_buffer__free(rb);
+
+	} else if (map_type == BPF_MAP_TYPE_USER_RINGBUF) {
+		struct user_ring_buffer *rb = user_ring_buffer__new(fd, NULL);
+		setup_err = (int)libbpf_get_error(rb);
+		if (setup_err) {
+			rb = NULL;
+			op_err = setup_err;
+		}
+
+		for (i = 0; i < iterations; i++) {
+			unsigned long long value = (unsigned long long)i + 1;
+			int cur_result = 0;
+
+			sleep(10);
+
+			if (rb) {
+				void *sample = user_ring_buffer__reserve(rb, sizeof(value));
+				if (!sample) {
+					cur_result = errno ? -errno : -1;
+					op_err = cur_result;
+				} else {
+					memcpy(sample, &value, sizeof(value));
+					user_ring_buffer__submit(rb, sample);
+				}
+			}
+
+			if (pos < map_json_size - 1) {
+				if (i > 0) {
+					n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos), ",\n");
+					if (n > 0) pos += n;
+				}
+				n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+					"                                    "
+					"{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+					"\"Operation Result\" : %d, \"Samples\" : 0, \"Bytes\" : 0, "
+					"\"Available\" : 0, \"Ring Size\" : 0, \"Error Code\" : %d, "
+					"\"Error Message\" : \"%s\" }",
+					i, mode, !setup_err, cur_result,
+					op_err, op_err ? strerror(-op_err) : "No error information");
+				if (n > 0) pos += n;
+			}
+		}
+
+		if (rb)
+			user_ring_buffer__free(rb);
+	}
+
+	if (pos < map_json_size - 1) {
+		n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+			"\n                                ]\n"
+			"                      }\n"
+			"        }");
+		if (n > 0) pos += n;
+	}
+	if (pos < map_json_size)
+		map_json_buf[pos] = '\0';
+
+	return op_err;
+}
+
+// Check whether a kernel symbol is present in /proc/kallsyms.
+static int netdata_core_symbol_in_kallsyms(const char *name)
+{
+	FILE *f;
+	char line[512];
+	char sym[256];
+	int found = 0;
+
+	f = fopen("/proc/kallsyms", "r");
+	if (!f)
+		return 1; // can't verify; assume present to avoid false disabling
+
+	while (!found && fgets(line, (int)sizeof(line), f)) {
+		if (sscanf(line, "%*x %*c %255s", sym) == 1)
+			found = (strcmp(sym, name) == 0);
+	}
+	fclose(f);
+	return found;
+}
+
+// Mutually exclusive kprobe target groups in priority order (first found wins).
+// Mirrors the compile-time #if chain in kernel-collector/kernel/cachestat_buffer_kern.c
+// and swap_buffer_kern.c, resolved at runtime via kallsyms for CO-RE builds.
+static const char * const netdata_core_kprobe_groups[][4] = {
+	{ "__folio_mark_dirty", "__set_page_dirty", "account_page_dirtied", NULL },
+	{ "swap_read_folio",    "swap_readpage",    NULL,                   NULL },
+	{ "__swap_writepage",   "swap_writepage",   NULL,                   NULL },
+	{ NULL,                 NULL,               NULL,                   NULL }
+};
+
+static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
+{
+	struct bpf_program *prog;
+	int g, i;
+
+	// For each group, pick the highest-priority existing symbol and disable all others.
+	for (g = 0; netdata_core_kprobe_groups[g][0]; g++) {
+		const char *winner = NULL;
+		const char *fn;
+		for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+			if (netdata_core_symbol_in_kallsyms(netdata_core_kprobe_groups[g][i])) {
+				winner = netdata_core_kprobe_groups[g][i];
+				break;
+			}
+		}
+		bpf_object__for_each_program(prog, obj) {
+			const char *sec = bpf_program__section_name(prog);
+			if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+				continue;
+			fn = sec + 7;
+			for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+				if (strcmp(fn, netdata_core_kprobe_groups[g][i]) == 0 &&
+				    (!winner || strcmp(fn, winner) != 0)) {
+					bpf_program__set_autoload(prog, false);
+					break;
+				}
+			}
+		}
+	}
+
+	// Disable any remaining kprobe program whose target still doesn't exist.
+	bpf_object__for_each_program(prog, obj) {
+		const char *sec = bpf_program__section_name(prog);
+		if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+			continue;
+		if (!netdata_core_symbol_in_kallsyms(sec + 7))
+			bpf_program__set_autoload(prog, false);
+	}
+}
+
+static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
+					     int *attached, int *skipped, int *maps, int *ring_maps,
+					     char *maps_json_buf, int maps_json_size)
+{
+	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
+	struct bpf_link *links[64] = { 0 };
+	struct bpf_object *obj;
+	struct bpf_program *prog;
+	struct bpf_map *map;
+	void *skel = NULL;
+	size_t link_count = 0;
+	int err = 0;
+	size_t i;
+	int maps_pos = 0;
+
+	*attached = 0;
+	*skipped = 0;
+	*maps = 0;
+	*ring_maps = 0;
+
+	if (maps_json_buf && maps_json_size > 0)
+		maps_json_buf[0] = '\0';
+
+	if (!ops)
+		return -ENOENT;
+
+	skel = ops->open();
+	err = (int)libbpf_get_error(skel);
+	if (err) {
+		skel = NULL;
+		goto out;
+	}
+
+	obj = ((struct netdata_core_buffer_skel_base *)skel)->obj;
+	netdata_core_select_kprobe_programs(obj);
+	err = ops->load(skel);
+	if (err)
+		goto out;
+
+	netdata_core_fill_ctrl_map(obj, ctrl_name, map_level);
+
+	bpf_object__for_each_program(prog, obj) {
+		struct bpf_link *link;
+
+		if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
+			(*skipped)++;
+			continue;
+		}
+
+		if (link_count >= sizeof(links) / sizeof(links[0])) {
+			err = -ENOSPC;
+			goto out;
+		}
+
+		// Skip programs disabled before load (missing kprobe targets).
+		if (bpf_program__fd(prog) < 0)
+			continue;
+
+		link = bpf_program__attach(prog);
+		err = (int)libbpf_get_error(link);
+		if (err) {
+			// Safety net: skip if target still absent at attach time.
+			if (err == -ENOENT) {
+				err = 0;
+				continue;
+			}
+			goto out;
+		}
+
+		links[link_count++] = link;
+		(*attached)++;
+	}
+
+	bpf_object__for_each_map(map, obj) {
+		int map_type = (int)bpf_map__type(map);
+		const char *map_name = bpf_map__name(map);
+		char map_json[2048];
+		int n;
+
+		(*maps)++;
+		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
+			continue;
+
+		(*ring_maps)++;
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			if (maps_pos > 0) {
+				n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), ",\n");
+				if (n > 0) maps_pos += n;
+			}
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos),
+				"        \"%s\" : ", map_name);
+			if (n > 0) maps_pos += n;
+		}
+
+		map_json[0] = '\0';
+		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
+			if (n > 0) maps_pos += n;
+			if (maps_pos < maps_json_size)
+				maps_json_buf[maps_pos] = '\0';
+		}
+
+		if (err)
+			goto out;
+	}
+
+	if (maps_json_buf && maps_pos < maps_json_size)
+		maps_json_buf[maps_pos] = '\0';
+
+out:
+	for (i = 0; i < link_count; i++)
+		bpf_link__destroy(links[i]);
+	if (skel)
+		ops->destroy(skel);
+
+	return err;
+}
+#else
+static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name,
+	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
+	char *maps_json_buf, int maps_json_size)
+{
+	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
+	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)maps_json_buf; (void)maps_json_size;
+	return -ENOSYS;
+}
+#endif // MY_LINUX_VERSION_CODE >= 329728
+
+static int netdata_core_ringbuf_supported(void)
+{
+#if MY_LINUX_VERSION_CODE >= 329728
+	return 1;
+#else
+	return 0;
+#endif
+}
 */
 import "C"
 
@@ -67,6 +536,8 @@ type aggregateTestCase struct {
 	modes             uint
 	emitModeArg       bool
 	pidSupported      bool
+	bufferSupported   bool
+	bufferCtrl        string
 }
 
 type aggregateResult struct {
@@ -78,6 +549,7 @@ type aggregateResult struct {
 	exitCode int
 	command  string
 	detail   string
+	mapsJSON string
 }
 
 type aggregateState struct {
@@ -86,26 +558,29 @@ type aggregateState struct {
 	selectedPID       int
 	selectionMask     uint64
 	explicitSelection bool
+	bufferMode        bool
+	bufferIterations  int
+	testsDir          string
 }
 
 var aggregateTests = []aggregateTestCase{
-	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "cstat_ctrl"},
+	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "dcstat_ctrl"},
 	{name: "disk", binary: "disk", selectionBit: selectDisk},
-	{name: "dns", binary: "dns", selectionBit: selectDNS},
-	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "dns", binary: "dns", selectionBit: selectDNS, bufferSupported: true},
+	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "fd_ctrl"},
 	{name: "hardirq", binary: "hardirq", selectionBit: selectHardirq},
 	{name: "mdflush", binary: "mdflush", selectionBit: selectMdflush, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "mount", binary: "mount", selectionBit: selectMount, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "networkviewer", binary: "networkviewer", selectionBit: selectNetworkviewer, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill},
-	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill, bufferSupported: true},
+	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "process_ctrl"},
+	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "shm_ctrl"},
 	{name: "socket", binary: "socket", selectionBit: selectSocket, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
 	{name: "softirq", binary: "softirq", selectionBit: selectSoftirq},
-	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "swap_ctrl"},
 	{name: "sync", binary: "sync", selectionBit: selectSync, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
-	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "vfs_ctrl"},
 	{name: "nfs", binary: "filesystem", extraArg: "--nfs", selectionBit: selectNFS, modes: modeProbe},
 	{name: "ext4", binary: "filesystem", extraArg: "--ext4", selectionBit: selectExt4, modes: modeProbe},
 	{name: "btrfs", binary: "filesystem", extraArg: "--btrfs", selectionBit: selectBtrfs, modes: modeProbe},
@@ -179,6 +654,9 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	jsonWriteString(out, result.command)
 	_, _ = io.WriteString(out, ",\n      \"detail\": ")
 	jsonWriteString(out, result.detail)
+	if result.mapsJSON != "" {
+		_, _ = fmt.Fprintf(out, ",\n      \"maps\": {\n%s\n      }", result.mapsJSON)
+	}
 	_, _ = io.WriteString(out, "\n    }")
 }
 
@@ -250,6 +728,73 @@ func executeTest(state aggregateState, test aggregateTestCase, mode uint, pid in
 	return result, exitCode
 }
 
+func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateResult, int) {
+	result := initResult(test)
+	result.mode = "buffer"
+	result.binary = test.name + "_buffer.skel.h"
+	result.command = test.name + "_buffer skeleton"
+	if state.selectedPID >= 0 {
+		result.pid = state.selectedPID
+	}
+
+	if !test.bufferSupported {
+		result.status = "Unavailable"
+		result.detail = "Collector has no CO-RE buffer object."
+		return result, 0
+	}
+
+	if C.netdata_core_ringbuf_supported() == 0 {
+		result.status = "Unavailable"
+		result.detail = "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8."
+		return result, 0
+	}
+
+	mapLevel := state.selectedPID
+	if mapLevel < 0 {
+		mapLevel = pidMin
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Running buffer skeleton test %s\n", result.command)
+
+	cName := C.CString(test.name)
+	defer C.free(unsafe.Pointer(cName))
+
+	cCtrl := C.CString(test.bufferCtrl)
+	defer C.free(unsafe.Pointer(cCtrl))
+
+	attached := C.int(0)
+	skipped := C.int(0)
+	maps := C.int(0)
+	ringMaps := C.int(0)
+	var mapsBuf [4096]C.char
+	errCode := int(C.netdata_core_run_buffer_skel_test(
+		cName,
+		cCtrl,
+		C.int(mapLevel),
+		C.int(state.bufferIterations),
+		&attached,
+		&skipped,
+		&maps,
+		&ringMaps,
+		&mapsBuf[0],
+		C.int(len(mapsBuf)),
+	))
+	mapsJSON := C.GoString(&mapsBuf[0])
+	if errCode != 0 {
+		result.status = "Fail"
+		result.exitCode = errCode
+		result.detail = fmt.Sprintf("Buffer skeleton test failed with error %d.", errCode)
+		result.mapsJSON = mapsJSON
+		return result, 1
+	}
+
+	result.status = "Success"
+	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
+		int(attached), int(skipped), int(maps), int(ringMaps))
+	result.mapsJSON = mapsJSON
+	return result, 0
+}
+
 func printHelp(out io.Writer, name string) {
 	_, _ = fmt.Fprintf(out,
 		"%s runs the CO-RE tests in-process and aggregates their results.\n\n"+
@@ -261,6 +806,7 @@ func printHelp(out io.Writer, name string) {
 			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
 			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
+			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+
 			"\n"+
 			"Selectors:\n"+
 			"  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"+
@@ -321,7 +867,7 @@ func nextOptionValue(args []string, index *int, inlineValue string, option strin
 }
 
 func parseArgs(args []string) (aggregateState, string, bool, error) {
-	state := aggregateState{selectedPID: -1}
+	state := aggregateState{selectedPID: -1, bufferIterations: 1}
 	logPath := ""
 
 	for i := 0; i < len(args); i++ {
@@ -366,12 +912,16 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			}
 
 			state.dnsIterations = value
+			state.bufferIterations = parseLeadingInt(value)
+			if state.bufferIterations < 1 {
+				state.bufferIterations = 1
+			}
 		case "tests-dir":
-			// accepted for backward compatibility; no-op in in-process mode
-			_, err := nextOptionValue(args, &i, inlineValue, option)
+			value, err := nextOptionValue(args, &i, inlineValue, option)
 			if err != nil {
 				return state, logPath, false, err
 			}
+			state.testsDir = value
 		case "log-path":
 			value, err := nextOptionValue(args, &i, inlineValue, option)
 			if err != nil {
@@ -451,6 +1001,8 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 		case "zfs":
 			state.selectionMask |= selectZFS
 			state.explicitSelection = true
+		case "buffer":
+			state.bufferMode = true
 		default:
 			return state, logPath, false, fmt.Errorf("unrecognized option '--%s'", option)
 		}
@@ -497,6 +1049,20 @@ func main() {
 
 	for _, test := range aggregateTests {
 		if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
+			continue
+		}
+
+		if state.bufferMode {
+			if !test.bufferSupported {
+				continue
+			}
+
+			result, exitCode := executeBufferTest(state, test)
+			if exitCode != 0 {
+				failures++
+			}
+			writeResult(report, result, &first)
+			resultCount++
 			continue
 		}
 

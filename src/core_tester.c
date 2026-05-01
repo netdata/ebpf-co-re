@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <errno.h>
 #include <getopt.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -9,7 +10,22 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
+
 #include "netdata_core_loader.h"
+/* BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728). */
+#if MY_LINUX_VERSION_CODE >= 329728
+#include "cachestat_buffer.skel.h"
+#include "dc_buffer.skel.h"
+#include "dns_buffer.skel.h"
+#include "fd_buffer.skel.h"
+#include "oomkill_buffer.skel.h"
+#include "process_buffer.skel.h"
+#include "shm_buffer.skel.h"
+#include "swap_buffer.skel.h"
+#include "vfs_buffer.skel.h"
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -79,7 +95,8 @@ enum option_ids {
     OPT_EXT4,
     OPT_BTRFS,
     OPT_XFS,
-    OPT_ZFS
+    OPT_ZFS,
+    OPT_BUFFER
 };
 
 typedef netdata_loader_fn_t aggregate_entrypoint_t;
@@ -94,6 +111,8 @@ typedef struct aggregate_test_case {
     unsigned modes;
     int emit_mode_arg;
     int pid_supported;
+    int buffer_supported;
+    const char *buffer_ctrl;
 } aggregate_test_case_t;
 
 typedef struct aggregate_result {
@@ -105,6 +124,7 @@ typedef struct aggregate_result {
     int exit_code;
     char command[256];
     char detail[256];
+    char maps_json[4096];
 } aggregate_result_t;
 
 typedef struct aggregate_state {
@@ -113,19 +133,74 @@ typedef struct aggregate_state {
     int selected_pid;
     uint64_t selection_mask;
     int explicit_selection;
+    int buffer_mode;
+    int buffer_iterations;
+    const char *tests_dir;
 } aggregate_state_t;
+
+typedef struct buffer_skel_base {
+    struct bpf_object_skeleton *skeleton;
+    struct bpf_object *obj;
+} buffer_skel_base_t;
+
+typedef struct buffer_skel_ops {
+    const char *name;
+    void *(*open)(void);
+    int (*load)(void *skel);
+    void (*destroy)(void *skel);
+} buffer_skel_ops_t;
+
+#define DEFINE_BUFFER_SKEL_OPS(prefix)                                              \
+    static void *open_##prefix(void)                                                \
+    {                                                                               \
+        return prefix##_bpf__open();                                                \
+    }                                                                               \
+                                                                                    \
+    static int load_##prefix(void *skel)                                            \
+    {                                                                               \
+        return prefix##_bpf__load(skel);                                            \
+    }                                                                               \
+                                                                                    \
+    static void destroy_##prefix(void *skel)                                        \
+    {                                                                               \
+        prefix##_bpf__destroy(skel);                                                \
+    }
+
+#if MY_LINUX_VERSION_CODE >= 329728
+DEFINE_BUFFER_SKEL_OPS(cachestat_buffer)
+DEFINE_BUFFER_SKEL_OPS(dc_buffer)
+DEFINE_BUFFER_SKEL_OPS(dns_buffer)
+DEFINE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_BUFFER_SKEL_OPS(oomkill_buffer)
+DEFINE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_BUFFER_SKEL_OPS(shm_buffer)
+DEFINE_BUFFER_SKEL_OPS(swap_buffer)
+DEFINE_BUFFER_SKEL_OPS(vfs_buffer)
+
+static const buffer_skel_ops_t buffer_skel_ops[] = {
+    { "cachestat", open_cachestat_buffer, load_cachestat_buffer, destroy_cachestat_buffer },
+    { "dc", open_dc_buffer, load_dc_buffer, destroy_dc_buffer },
+    { "dns", open_dns_buffer, load_dns_buffer, destroy_dns_buffer },
+    { "fd", open_fd_buffer, load_fd_buffer, destroy_fd_buffer },
+    { "oomkill", open_oomkill_buffer, load_oomkill_buffer, destroy_oomkill_buffer },
+    { "process", open_process_buffer, load_process_buffer, destroy_process_buffer },
+    { "shm", open_shm_buffer, load_shm_buffer, destroy_shm_buffer },
+    { "swap", open_swap_buffer, load_swap_buffer, destroy_swap_buffer },
+    { "vfs", open_vfs_buffer, load_vfs_buffer, destroy_vfs_buffer },
+};
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "cstat_ctrl" },
     { "dc", "dc", netdata_dc_entry, NULL, NULL, SELECT_DC,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "dcstat_ctrl" },
     { "disk", "disk", netdata_disk_entry, NULL, NULL, SELECT_DISK,
       MODE_NONE, 0, 0 },
     { "dns", "dns", netdata_dns_entry, NULL, NULL, SELECT_DNS,
-      MODE_NONE, 0, 0 },
+      MODE_NONE, 0, 0, 1, NULL },
     { "fd", "fd", netdata_fd_entry, NULL, NULL, SELECT_FD,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "fd_ctrl" },
     { "hardirq", "hardirq", netdata_hardirq_entry, NULL, NULL, SELECT_HARDIRQ,
       MODE_NONE, 0, 0 },
     { "mdflush", "mdflush", netdata_mdflush_entry, NULL, NULL, SELECT_MDFLUSH,
@@ -135,21 +210,21 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "networkviewer", "networkviewer", netdata_networkviewer_entry, NULL, NULL, SELECT_NETWORKVIEWER,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
     { "oomkill", "oomkill", netdata_oomkill_entry, NULL, NULL, SELECT_OOMKILL,
-      MODE_NONE, 0, 0 },
+      MODE_NONE, 0, 0, 1, NULL },
     { "process", "process", netdata_process_entry, NULL, NULL, SELECT_PROCESS,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "process_ctrl" },
     { "shm", "shm", netdata_shm_entry, NULL, NULL, SELECT_SHM,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "shm_ctrl" },
     { "socket", "socket", netdata_socket_entry, NULL, NULL, SELECT_SOCKET,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
     { "softirq", "softirq", netdata_softirq_entry, NULL, NULL, SELECT_SOFTIRQ,
       MODE_NONE, 0, 0 },
     { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "swap_ctrl" },
     { "sync", "sync", netdata_sync_entry, NULL, NULL, SELECT_SYNC,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
     { "vfs", "vfs", netdata_vfs_entry, NULL, NULL, SELECT_VFS,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, "vfs_ctrl" },
     { "nfs", "filesystem", netdata_filesystem_entry, "--nfs", NULL, SELECT_NFS,
       MODE_PROBE, 0, 0 },
     { "ext4", "filesystem", netdata_filesystem_entry, "--ext4", NULL, SELECT_EXT4,
@@ -270,6 +345,8 @@ static void write_result(FILE *out, const aggregate_result_t *result, int *first
     json_write_string(out, result->command);
     fprintf(out, ",\n      \"detail\": ");
     json_write_string(out, result->detail);
+    if (result->maps_json[0])
+        fprintf(out, ",\n      \"maps\": {\n%s\n      }", result->maps_json);
     fprintf(out, "\n    }");
 }
 
@@ -351,6 +428,408 @@ static int execute_test(const aggregate_state_t *state, const aggregate_test_cas
     return exit_code;
 }
 
+#if MY_LINUX_VERSION_CODE >= 329728
+typedef struct ringbuf_stats {
+    size_t samples;
+    size_t bytes;
+} ringbuf_stats_t;
+
+static int ringbuf_sample_cb(void *ctx, void *data, size_t size)
+{
+    ringbuf_stats_t *stats = ctx;
+
+    (void)data;
+    if (stats) {
+        stats->samples++;
+        stats->bytes += size;
+    }
+
+    return 0;
+}
+
+static int map_is_ringbuf(enum bpf_map_type type)
+{
+    return type == BPF_MAP_TYPE_RINGBUF || type == BPF_MAP_TYPE_USER_RINGBUF;
+}
+
+static const char *format_error(int err, char *buf, size_t size)
+{
+    if (!err)
+        return "No error information";
+    if (err < 0)
+        err = -err;
+    snprintf(buf, size, "%s", strerror(err));
+    return buf;
+}
+
+static const buffer_skel_ops_t *find_buffer_skel_ops(const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof(buffer_skel_ops) / sizeof(buffer_skel_ops[0]); i++) {
+        if (!strcmp(buffer_skel_ops[i].name, name))
+            return &buffer_skel_ops[i];
+    }
+
+    return NULL;
+}
+
+static void fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
+{
+    struct bpf_map *map;
+    int fd;
+    __u64 values[] = { 1, (uint64_t)map_level, 0, 0, 0, 0 };
+    __u32 i;
+    __u32 max_entries;
+
+    if (!ctrl_name)
+        return;
+
+    map = bpf_object__find_map_by_name(obj, ctrl_name);
+    if (!map)
+        return;
+
+    fd = bpf_map__fd(map);
+    max_entries = bpf_map__max_entries(map);
+    for (i = 0; i < max_entries && i < sizeof(values) / sizeof(values[0]); i++)
+        bpf_map_update_elem(fd, &i, &values[i], 0);
+}
+
+static int test_ringbuf_map(struct bpf_map *map, int iterations,
+                            char *map_json_buf, size_t map_json_size)
+{
+    enum bpf_map_type type = bpf_map__type(map);
+    int fd = bpf_map__fd(map);
+    uint32_t key_size = bpf_map__key_size(map);
+    uint32_t value_size = bpf_map__value_size(map);
+    const char *mode = (type == BPF_MAP_TYPE_USER_RINGBUF) ? "user_ringbuf_producer" : "ringbuf_consumer";
+    int setup_error = 0;
+    int op_error = 0;
+    int i;
+    struct ring_buffer *rb = NULL;
+    struct user_ring_buffer *urb = NULL;
+    ringbuf_stats_t stats = { 0 };
+    ringbuf_stats_t previous = { 0 };
+    size_t pos = 0;
+    char errbuf[128];
+    int n;
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "{\n"
+        "            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+        "                       \"Type\" : %u,\n"
+        "                       \"FD\" : %d,\n"
+        "                       \"Data\" : [\n",
+        key_size, value_size, (unsigned)type, fd);
+    if (n > 0) pos += (size_t)n;
+
+    if (type == BPF_MAP_TYPE_RINGBUF) {
+        rb = ring_buffer__new(fd, ringbuf_sample_cb, &stats, NULL);
+        setup_error = libbpf_get_error(rb);
+        if (setup_error)
+            rb = NULL;
+    } else if (type == BPF_MAP_TYPE_USER_RINGBUF) {
+        urb = user_ring_buffer__new(fd, NULL);
+        setup_error = libbpf_get_error(urb);
+        if (setup_error)
+            urb = NULL;
+    }
+
+    op_error = setup_error;
+    for (i = 0; i < iterations; i++) {
+        size_t iter_samples = 0;
+        size_t iter_bytes = 0;
+        size_t ring_size = 0;
+        size_t avail_data = 0;
+        int cur_op_result = 0;
+
+        sleep(10);
+
+        if (rb) {
+            struct ring *ring = ring_buffer__ring(rb, 0);
+
+            cur_op_result = ring_buffer__poll(rb, 0);
+            if (cur_op_result < 0)
+                op_error = cur_op_result;
+
+            iter_samples = stats.samples - previous.samples;
+            iter_bytes = stats.bytes - previous.bytes;
+            previous = stats;
+
+            if (ring) {
+                ring_size = ring__size(ring);
+                avail_data = ring__avail_data_size(ring);
+            }
+        } else if (urb) {
+            __u64 value = (__u64)(i + 1);
+            void *sample = user_ring_buffer__reserve(urb, sizeof(value));
+            if (!sample) {
+                cur_op_result = errno ? -errno : -1;
+                op_error = cur_op_result;
+            } else {
+                memcpy(sample, &value, sizeof(value));
+                user_ring_buffer__submit(urb, sample);
+            }
+        }
+
+        if (i > 0 && pos < map_json_size - 1) {
+            n = snprintf(map_json_buf + pos, map_json_size - pos, ",\n");
+            if (n > 0) pos += (size_t)n;
+        }
+
+        n = snprintf(map_json_buf + pos, map_json_size - pos,
+            "                                    "
+            "{ \"Iteration\" : %d, \"Mode\" : \"%s\", \"Setup\" : %d, "
+            "\"Operation Result\" : %d, \"Samples\" : %zu, \"Bytes\" : %zu, "
+            "\"Available\" : %zu, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+            "\"Error Message\" : \"%s\" }",
+            i, mode, !setup_error, cur_op_result,
+            iter_samples, iter_bytes, avail_data, ring_size,
+            op_error, format_error(op_error, errbuf, sizeof(errbuf)));
+        if (n > 0) pos += (size_t)n;
+        if (pos >= map_json_size - 1)
+            pos = map_json_size - 1;
+    }
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "\n                                ]\n"
+        "                      }\n"
+        "        }");
+    if (n > 0) pos += (size_t)n;
+    if (pos < map_json_size)
+        map_json_buf[pos] = '\0';
+
+    if (rb)
+        ring_buffer__free(rb);
+    if (urb)
+        user_ring_buffer__free(urb);
+
+    return op_error;
+}
+
+static int netdata_core_symbol_in_kallsyms(const char *name)
+{
+    FILE *f;
+    char line[512];
+    char sym[256];
+    int found = 0;
+
+    f = fopen("/proc/kallsyms", "r");
+    if (!f)
+        return 1; /* can't verify; assume present to avoid false disabling */
+
+    while (!found && fgets(line, (int)sizeof(line), f)) {
+        if (sscanf(line, "%*x %*c %255s", sym) == 1)
+            found = (strcmp(sym, name) == 0);
+    }
+    fclose(f);
+    return found;
+}
+
+/* Mutually exclusive kprobe target groups in priority order (first found wins).
+ * Mirrors the compile-time #if chain in kernel-collector/kernel/cachestat_buffer_kern.c
+ * and swap_buffer_kern.c, resolved at runtime via kallsyms for CO-RE builds. */
+static const char * const netdata_core_kprobe_groups[][4] = {
+    { "__folio_mark_dirty", "__set_page_dirty", "account_page_dirtied", NULL },
+    { "swap_read_folio",    "swap_readpage",    NULL,                   NULL },
+    { "__swap_writepage",   "swap_writepage",   NULL,                   NULL },
+    { NULL,                 NULL,               NULL,                   NULL }
+};
+
+static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
+{
+    struct bpf_program *prog;
+    int g, i;
+
+    for (g = 0; netdata_core_kprobe_groups[g][0]; g++) {
+        const char *winner = NULL;
+        for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+            if (netdata_core_symbol_in_kallsyms(netdata_core_kprobe_groups[g][i])) {
+                winner = netdata_core_kprobe_groups[g][i];
+                break;
+            }
+        }
+        bpf_object__for_each_program(prog, obj) {
+            const char *sec = bpf_program__section_name(prog);
+            const char *fn;
+            if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+                continue;
+            fn = sec + 7;
+            for (i = 0; netdata_core_kprobe_groups[g][i]; i++) {
+                if (strcmp(fn, netdata_core_kprobe_groups[g][i]) == 0 &&
+                    (!winner || strcmp(fn, winner) != 0)) {
+                    bpf_program__set_autoload(prog, false);
+                    break;
+                }
+            }
+        }
+    }
+
+    /* Disable any remaining kprobe program whose target doesn't exist. */
+    bpf_object__for_each_program(prog, obj) {
+        const char *sec = bpf_program__section_name(prog);
+        if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+            continue;
+        if (!netdata_core_symbol_in_kallsyms(sec + 7))
+            bpf_program__set_autoload(prog, false);
+    }
+}
+
+static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **links, size_t links_len,
+                                  size_t *attached, size_t *skipped)
+{
+    struct bpf_program *prog;
+    int last_error = 0;
+
+    bpf_object__for_each_program(prog, obj) {
+        struct bpf_link *link;
+
+        if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
+            (*skipped)++;
+            continue;
+        }
+
+        if (*attached >= links_len)
+            return -ENOSPC;
+
+        /* Skip programs disabled before load (missing kprobe targets). */
+        if (bpf_program__fd(prog) < 0)
+            continue;
+
+        link = bpf_program__attach(prog);
+        last_error = libbpf_get_error(link);
+        if (last_error) {
+            /* Safety net: skip if target still absent at attach time. */
+            if (last_error == -ENOENT) {
+                last_error = 0;
+                continue;
+            }
+            return last_error;
+        }
+
+        links[(*attached)++] = link;
+    }
+
+    return 0;
+}
+
+static int execute_buffer_test(const aggregate_state_t *state, const aggregate_test_case_t *test,
+                               aggregate_result_t *result)
+{
+    const buffer_skel_ops_t *ops;
+    void *skel = NULL;
+    struct bpf_object *obj = NULL;
+    struct bpf_map *map;
+    struct bpf_link *links[64] = { 0 };
+    size_t attached = 0;
+    size_t skipped = 0;
+    size_t ringbuf_maps = 0;
+    size_t maps = 0;
+    int err = 0;
+    size_t i;
+    size_t maps_json_pos = 0;
+    char map_json_buf[2048];
+
+    init_result(result, test);
+    snprintf(result->mode, sizeof(result->mode), "%s", "buffer");
+    snprintf(result->binary, sizeof(result->binary), "%s_buffer.skel.h", test->name);
+    snprintf(result->command, sizeof(result->command), "%s_buffer skeleton", test->name);
+    if (state->selected_pid >= 0)
+        result->pid = state->selected_pid;
+
+    if (!test->buffer_supported) {
+        snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+        snprintf(result->detail, sizeof(result->detail), "%s", "Collector has no CO-RE buffer object.");
+        return 0;
+    }
+
+    (void)state->tests_dir;
+
+    ops = find_buffer_skel_ops(test->name);
+    if (!ops) {
+        snprintf(result->status, sizeof(result->status), "%s", "Fail");
+        snprintf(result->detail, sizeof(result->detail), "%s", "Buffer skeleton is not compiled into this tester.");
+        return 1;
+    }
+
+    fprintf(stderr, "Running buffer skeleton test %s\n", result->command);
+
+    skel = ops->open();
+    err = libbpf_get_error(skel);
+    if (err) {
+        skel = NULL;
+        goto fail;
+    }
+    obj = ((buffer_skel_base_t *)skel)->obj;
+    netdata_core_select_kprobe_programs(obj);
+
+    err = ops->load(skel);
+    if (err)
+        goto fail;
+
+    fill_ctrl_map(obj, test->buffer_ctrl, state->selected_pid >= 0 ? state->selected_pid : PID_MIN);
+
+    err = attach_buffer_programs(obj, links, sizeof(links) / sizeof(links[0]), &attached, &skipped);
+    if (err)
+        goto fail;
+
+    bpf_object__for_each_map(map, obj) {
+        const char *map_name = bpf_map__name(map);
+        int n;
+
+        maps++;
+        if (!map_is_ringbuf(bpf_map__type(map)))
+            continue;
+
+        if (maps_json_pos > 0 && maps_json_pos < sizeof(result->maps_json) - 1) {
+            n = snprintf(result->maps_json + maps_json_pos,
+                         sizeof(result->maps_json) - maps_json_pos, ",\n");
+            if (n > 0) maps_json_pos += (size_t)n;
+        }
+        n = snprintf(result->maps_json + maps_json_pos,
+                     sizeof(result->maps_json) - maps_json_pos,
+                     "        \"%s\" : ", map_name);
+        if (n > 0) maps_json_pos += (size_t)n;
+
+        ringbuf_maps++;
+        map_json_buf[0] = '\0';
+        err = test_ringbuf_map(map, state->buffer_iterations,
+                               map_json_buf, sizeof(map_json_buf));
+
+        n = snprintf(result->maps_json + maps_json_pos,
+                     sizeof(result->maps_json) - maps_json_pos, "%s", map_json_buf);
+        if (n > 0) maps_json_pos += (size_t)n;
+        if (maps_json_pos >= sizeof(result->maps_json) - 1)
+            maps_json_pos = sizeof(result->maps_json) - 1;
+        result->maps_json[maps_json_pos] = '\0';
+
+        if (err)
+            goto fail;
+    }
+
+    for (i = 0; i < attached; i++)
+        bpf_link__destroy(links[i]);
+    ops->destroy(skel);
+
+    snprintf(result->status, sizeof(result->status), "%s", "Success");
+    snprintf(result->detail, sizeof(result->detail),
+             "Loaded object, attached %zu programs, skipped %zu socket filters, checked %zu maps and %zu ring buffers.",
+             attached, skipped, maps, ringbuf_maps);
+    return 0;
+
+fail:
+    for (i = 0; i < attached; i++)
+        bpf_link__destroy(links[i]);
+    if (skel)
+        ops->destroy(skel);
+
+    snprintf(result->status, sizeof(result->status), "%s", "Fail");
+    snprintf(result->detail, sizeof(result->detail), "Buffer skeleton test failed with error %d.", err);
+    result->exit_code = err ? err : 1;
+    return 1;
+}
+#endif /* MY_LINUX_VERSION_CODE >= 329728 */
+
 static void print_help(const char *name)
 {
     fprintf(stdout,
@@ -363,6 +842,7 @@ static void print_help(const char *name)
             "  --iteration N     Forward the capture iteration count to the DNS tester.\n"
             "  --tests-dir PATH  Accepted for compatibility and ignored in standalone mode.\n"
             "  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"
+            "  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"
             "\n"
             "Selectors:\n"
             "  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"
@@ -410,10 +890,11 @@ int main(int argc, char **argv)
         { "btrfs",         no_argument,       0, OPT_BTRFS },
         { "xfs",           no_argument,       0, OPT_XFS },
         { "zfs",           no_argument,       0, OPT_ZFS },
+        { "buffer",        no_argument,       0, OPT_BUFFER },
         { 0,               0,                 0, 0 }
     };
 
-    aggregate_state_t state = { .selected_pid = -1 };
+    aggregate_state_t state = { .selected_pid = -1, .buffer_iterations = 1 };
     aggregate_result_t results[192];
     const char *log_path = NULL;
     FILE *report = stdout;
@@ -445,8 +926,12 @@ int main(int argc, char **argv)
                 break;
             case OPT_ITERATION:
                 state.dns_iterations = optarg;
+                state.buffer_iterations = (int)strtol(optarg, NULL, 10);
+                if (state.buffer_iterations < 1)
+                    state.buffer_iterations = 1;
                 break;
             case OPT_TESTS_DIR:
+                state.tests_dir = optarg;
                 break;
             case OPT_LOG_PATH:
                 log_path = optarg;
@@ -547,6 +1032,9 @@ int main(int argc, char **argv)
                 state.selection_mask |= SELECT_ZFS;
                 state.explicit_selection = 1;
                 break;
+            case OPT_BUFFER:
+                state.buffer_mode = 1;
+                break;
             default:
                 break;
         }
@@ -572,6 +1060,22 @@ int main(int argc, char **argv)
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;
+
+        if (state.buffer_mode) {
+            if (!test->buffer_supported)
+                continue;
+
+#if MY_LINUX_VERSION_CODE >= 329728
+            failures += execute_buffer_test(&state, test, &results[result_count]) != 0;
+#else
+            record_unavailable(&results[result_count], test,
+                               "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8.");
+            unavailable++;
+#endif
+            write_result(report, &results[result_count], &first);
+            result_count++;
+            continue;
+        }
 
         if (test->unavailable_reason) {
             record_unavailable(&results[result_count], test, test->unavailable_reason);
