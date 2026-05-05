@@ -66,10 +66,10 @@ ARENA_APPS = cachestat_arena \
              swap_arena \
              vfs_arena \
              #
-ARENA_OBJS = $(patsubst %,%.bpf.o,$(ARENA_APPS))
+ARENA_SKELS = $(patsubst %,%.skel.h,$(ARENA_APPS))
 else
 ARENA_APPS =
-ARENA_OBJS =
+ARENA_SKELS =
 endif
 
 AGGREGATE_TESTER = core_tester
@@ -87,7 +87,7 @@ libbpf:
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
+	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
@@ -107,7 +107,7 @@ dns: dns.o $(DNS_HELPER_OBJ)
 $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
-compress: $(APPS) $(RINGBUF_SKELS) $(ARENA_OBJS)
+compress: $(APPS) $(RINGBUF_SKELS) $(ARENA_SKELS)
 
 aggregate/%.o: %.c %.skel.h
 	mkdir -p aggregate
@@ -119,10 +119,10 @@ $(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
 $(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
 	ar rcs $@ $^
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS) $(ARENA_OBJS)
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS) $(ARENA_SKELS)
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(ARENA_OBJS) $(wildcard core_tester_go/*.go)
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(ARENA_SKELS) $(wildcard core_tester_go/*.go)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
 	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \

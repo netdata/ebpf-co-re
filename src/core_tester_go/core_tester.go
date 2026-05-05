@@ -8,6 +8,9 @@ package main
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include "netdata_core_loader.h"
+#ifndef TASK_COMM_LEN
+#define TASK_COMM_LEN 16
+#endif
 // BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728).
 #if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
@@ -99,6 +102,81 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 
 	return NULL;
 }
+
+// BPF_MAP_TYPE_ARENA requires kernel >= 6.9 (version code 395520).
+#if MY_LINUX_VERSION_CODE >= 395520
+#include "netdata_cachestat_arena.h"
+#include "netdata_dc_arena.h"
+#include "netdata_dns_arena.h"
+#include "netdata_fd_arena.h"
+#include "netdata_oomkill_arena.h"
+#include "netdata_process_arena.h"
+#include "netdata_shm_arena.h"
+#include "netdata_swap_arena.h"
+#include "netdata_vfs_arena.h"
+
+#include "cachestat_arena.skel.h"
+#include "dc_arena.skel.h"
+#include "dns_arena.skel.h"
+#include "fd_arena.skel.h"
+#include "oomkill_arena.skel.h"
+#include "process_arena.skel.h"
+#include "shm_arena.skel.h"
+#include "swap_arena.skel.h"
+#include "vfs_arena.skel.h"
+
+// cgo and some compilers are more conservative about inline skeleton helpers.
+#define DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(prefix) \
+	struct prefix##_bpf; \
+	static struct prefix##_bpf *prefix##_bpf__open(void); \
+	static int prefix##_bpf__load(struct prefix##_bpf *obj); \
+	static void prefix##_bpf__destroy(struct prefix##_bpf *obj)
+
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(cachestat_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dc_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dns_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fd_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(oomkill_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(process_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(shm_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(swap_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(vfs_arena);
+#undef DECLARE_NETDATA_CORE_ARENA_SKEL_OPS
+
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(cachestat_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dc_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_arena)
+
+static const struct netdata_core_buffer_skel_ops netdata_core_arena_skel_ops[] = {
+	{ "cachestat", netdata_core_open_cachestat_arena, netdata_core_load_cachestat_arena, netdata_core_destroy_cachestat_arena },
+	{ "dc", netdata_core_open_dc_arena, netdata_core_load_dc_arena, netdata_core_destroy_dc_arena },
+	{ "dns", netdata_core_open_dns_arena, netdata_core_load_dns_arena, netdata_core_destroy_dns_arena },
+	{ "fd", netdata_core_open_fd_arena, netdata_core_load_fd_arena, netdata_core_destroy_fd_arena },
+	{ "oomkill", netdata_core_open_oomkill_arena, netdata_core_load_oomkill_arena, netdata_core_destroy_oomkill_arena },
+	{ "process", netdata_core_open_process_arena, netdata_core_load_process_arena, netdata_core_destroy_process_arena },
+	{ "shm", netdata_core_open_shm_arena, netdata_core_load_shm_arena, netdata_core_destroy_shm_arena },
+	{ "swap", netdata_core_open_swap_arena, netdata_core_load_swap_arena, netdata_core_destroy_swap_arena },
+	{ "vfs", netdata_core_open_vfs_arena, netdata_core_load_vfs_arena, netdata_core_destroy_vfs_arena },
+};
+
+static const struct netdata_core_buffer_skel_ops *netdata_core_find_arena_skel_ops(const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(netdata_core_arena_skel_ops) / sizeof(netdata_core_arena_skel_ops[0]); i++) {
+		if (!strcmp(netdata_core_arena_skel_ops[i].name, name))
+			return &netdata_core_arena_skel_ops[i];
+	}
+
+	return NULL;
+}
+#endif // MY_LINUX_VERSION_CODE >= 395520
 
 static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
@@ -453,14 +531,17 @@ out:
 	return err;
 }
 
-static int netdata_core_run_buffer_object_test(const char *path, const char *ctrl_name, int map_level,
-					       int iterations, int *attached, int *skipped, int *maps,
-					       int *ring_maps, char *maps_json_buf, int maps_json_size)
+#if MY_LINUX_VERSION_CODE >= 395520
+static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
+					    int *attached, int *skipped, int *maps, int *ring_maps,
+					    char *maps_json_buf, int maps_json_size)
 {
-	struct bpf_object *obj;
+	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_arena_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
+	struct bpf_object *obj;
 	struct bpf_program *prog;
 	struct bpf_map *map;
+	void *skel = NULL;
 	size_t link_count = 0;
 	int err = 0;
 	size_t i;
@@ -474,15 +555,19 @@ static int netdata_core_run_buffer_object_test(const char *path, const char *ctr
 	if (maps_json_buf && maps_json_size > 0)
 		maps_json_buf[0] = '\0';
 
-	obj = bpf_object__open_file(path, NULL);
-	err = (int)libbpf_get_error(obj);
+	if (!ops)
+		return -ENOENT;
+
+	skel = ops->open();
+	err = (int)libbpf_get_error(skel);
 	if (err) {
-		obj = NULL;
-		return err;
+		skel = NULL;
+		goto out;
 	}
 
+	obj = ((struct netdata_core_buffer_skel_base *)skel)->obj;
 	netdata_core_select_kprobe_programs(obj);
-	err = bpf_object__load(obj);
+	err = ops->load(skel);
 	if (err)
 		goto out;
 
@@ -528,7 +613,7 @@ static int netdata_core_run_buffer_object_test(const char *path, const char *ctr
 		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
 			continue;
 
-			(*ring_maps)++;
+		(*ring_maps)++;
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			if (maps_pos > 0) {
@@ -560,11 +645,12 @@ static int netdata_core_run_buffer_object_test(const char *path, const char *ctr
 out:
 	for (i = 0; i < link_count; i++)
 		bpf_link__destroy(links[i]);
-	if (obj)
-		bpf_object__close(obj);
+	if (skel)
+		ops->destroy(skel);
 
 	return err;
 }
+#endif // MY_LINUX_VERSION_CODE >= 395520
 
 static int netdata_core_arena_supported(void)
 {
@@ -584,11 +670,11 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
-static int netdata_core_run_buffer_object_test(const char *path, const char *ctrl_name,
+static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
 	char *maps_json_buf, int maps_json_size)
 {
-	(void)path; (void)ctrl_name; (void)map_level; (void)iterations;
+	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
@@ -935,8 +1021,8 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateResult, int) {
 	result := initResult(test)
 	result.mode = "arena"
-	result.binary = test.name + "_arena.bpf.o"
-	result.command = test.name + "_arena object"
+	result.binary = test.name + "_arena.skel.h"
+	result.command = test.name + "_arena skeleton"
 	if state.selectedPID >= 0 {
 		result.pid = state.selectedPID
 	}
@@ -958,16 +1044,10 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 		mapLevel = pidMin
 	}
 
-	testsDir := state.testsDir
-	if testsDir == "" {
-		testsDir = ".."
-	}
+	_, _ = fmt.Fprintf(os.Stderr, "Running arena skeleton test %s\n", result.command)
 
-	objectPath := fmt.Sprintf("%s/%s_arena.bpf.o", testsDir, test.name)
-	_, _ = fmt.Fprintf(os.Stderr, "Running arena object test %s\n", result.command)
-
-	cPath := C.CString(objectPath)
-	defer C.free(unsafe.Pointer(cPath))
+	cName := C.CString(test.name)
+	defer C.free(unsafe.Pointer(cName))
 
 	cCtrl := C.CString(test.bufferCtrl)
 	defer C.free(unsafe.Pointer(cCtrl))
@@ -977,8 +1057,8 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	maps := C.int(0)
 	ringMaps := C.int(0)
 	var mapsBuf [4096]C.char
-	errCode := int(C.netdata_core_run_buffer_object_test(
-		cPath,
+	errCode := int(C.netdata_core_run_arena_skel_test(
+		cName,
 		cCtrl,
 		C.int(mapLevel),
 		C.int(state.bufferIterations),
@@ -993,7 +1073,7 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	if errCode != 0 {
 		result.status = "Fail"
 		result.exitCode = errCode
-		result.detail = fmt.Sprintf("Arena object test failed with error %d.", errCode)
+		result.detail = fmt.Sprintf("Arena skeleton test failed with error %d.", errCode)
 		result.mapsJSON = mapsJSON
 		return result, 1
 	}
@@ -1014,10 +1094,10 @@ func printHelp(out io.Writer, name string) {
 			"  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"+
 			"  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"+
 			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
-			"  --tests-dir PATH  Base directory used to locate *_arena.bpf.o files.\n"+
+			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
 			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+
-			"  --arena           Test CO-RE arena BPF objects directly from *.bpf.o files.\n"+
+			"  --arena           Test CO-RE arena BPF objects using compiled-in skeletons.\n"+
 			"\n"+
 			"Selectors:\n"+
 			"  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"+
