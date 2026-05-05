@@ -3,6 +3,7 @@
 #include "vmlinux_508.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
+#include "bpf_arena_compat.h"
 
 #ifndef TASK_COMM_LEN
 #define TASK_COMM_LEN 16
