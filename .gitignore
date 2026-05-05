@@ -18,3 +18,5 @@ src/tests/*
 .local_libbpf/pkgconfig
 !src/tests/*.sh
 
+.codex
+TODO*.md
