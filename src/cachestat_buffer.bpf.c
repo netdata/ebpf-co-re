@@ -39,12 +39,16 @@ NETDATA_BPF_ARRAY_DEF(cstat_ctrl, __u32, __u64, NETDATA_CONTROLLER_END);
 static __always_inline void netdata_cachestat_fill_event(struct netdata_cachestat_event_t NETDATA_ARENA_PTR *ev, void *ctrl)
 {
     __u32 tgid = 0;
+    char comm[TASK_COMM_LEN];
     ev->ct   = bpf_ktime_get_ns();
     ev->pid  = netdata_get_pid(ctrl, &tgid);
     ev->tgid = tgid;
     libnetdata_update_uid_gid((__u32 *)&ev->uid, (__u32 *)&ev->gid);
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
-    bpf_get_current_comm((char *)ev->name, TASK_COMM_LEN);
+    bpf_get_current_comm(comm, TASK_COMM_LEN);
+#pragma unroll
+    for (int i = 0; i < TASK_COMM_LEN; i++)
+        ev->name[i] = comm[i];
 #else
     ev->name[0] = '\0';
 #endif

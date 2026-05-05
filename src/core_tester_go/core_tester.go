@@ -11,6 +11,12 @@ package main
 #ifndef TASK_COMM_LEN
 #define TASK_COMM_LEN 16
 #endif
+
+static void netdata_disable_libbpf_memlock_rlim(void)
+{
+	libbpf_set_memlock_rlim(0);
+}
+
 // BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728).
 #if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
@@ -705,6 +711,10 @@ import (
 	"strings"
 	"unsafe"
 )
+
+func init() {
+	C.netdata_disable_libbpf_memlock_rlim()
+}
 
 const (
 	modeNone       = uint(0)
