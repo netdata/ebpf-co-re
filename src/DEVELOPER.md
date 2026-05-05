@@ -63,9 +63,9 @@ cd src/tests
 ./core_tester_go
 ```
 
-Both aggregate testers execute the linked CO-RE test entrypoints in-process and write a JSON summary to stdout. Use `./core_tester --help` or `./core_tester_go --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, and `--iteration`.
+Both aggregate testers execute the linked CO-RE test entrypoints in-process and write a JSON summary to stdout. Use `./core_tester --help` or `./core_tester_go --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, `--iteration`, and `--arena`.
 
-`./core_tester_go` is built from `src/core_tester_go/core_tester.go` and uses CGO plus `netdata_core_loader.{c,h}` to call the renamed C test entrypoints directly. It does not spawn `src/tests/<module>` binaries, and `--tests-dir` is accepted only for CLI compatibility.
+`./core_tester_go` is built from `src/core_tester_go/core_tester.go` and uses CGO plus `netdata_core_loader.{c,h}` to call the renamed C test entrypoints directly. It does not spawn `src/tests/<module>` binaries. `--tests-dir` is used to locate `*_arena.bpf.o` files when arena mode is enabled.
 
 `./core_tester --all` runs all non-filesystem CO-RE tests and expands each selected module across every mode that tester supports.
 

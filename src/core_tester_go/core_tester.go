@@ -333,8 +333,8 @@ static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
 }
 
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
-					     int *attached, int *skipped, int *maps, int *ring_maps,
-					     char *maps_json_buf, int maps_json_size)
+						     int *attached, int *skipped, int *maps, int *ring_maps,
+						     char *maps_json_buf, int maps_json_size)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -452,6 +452,128 @@ out:
 
 	return err;
 }
+
+static int netdata_core_run_buffer_object_test(const char *path, const char *ctrl_name, int map_level,
+					       int iterations, int *attached, int *skipped, int *maps,
+					       int *ring_maps, char *maps_json_buf, int maps_json_size)
+{
+	struct bpf_object *obj;
+	struct bpf_link *links[64] = { 0 };
+	struct bpf_program *prog;
+	struct bpf_map *map;
+	size_t link_count = 0;
+	int err = 0;
+	size_t i;
+	int maps_pos = 0;
+
+	*attached = 0;
+	*skipped = 0;
+	*maps = 0;
+	*ring_maps = 0;
+
+	if (maps_json_buf && maps_json_size > 0)
+		maps_json_buf[0] = '\0';
+
+	obj = bpf_object__open_file(path, NULL);
+	err = (int)libbpf_get_error(obj);
+	if (err) {
+		obj = NULL;
+		return err;
+	}
+
+	netdata_core_select_kprobe_programs(obj);
+	err = bpf_object__load(obj);
+	if (err)
+		goto out;
+
+	netdata_core_fill_ctrl_map(obj, ctrl_name, map_level);
+
+	bpf_object__for_each_program(prog, obj) {
+		struct bpf_link *link;
+
+		if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
+			(*skipped)++;
+			continue;
+		}
+
+		if (link_count >= sizeof(links) / sizeof(links[0])) {
+			err = -ENOSPC;
+			goto out;
+		}
+
+		if (bpf_program__fd(prog) < 0)
+			continue;
+
+		link = bpf_program__attach(prog);
+		err = (int)libbpf_get_error(link);
+		if (err) {
+			if (err == -ENOENT) {
+				err = 0;
+				continue;
+			}
+			goto out;
+		}
+
+		links[link_count++] = link;
+		(*attached)++;
+	}
+
+	bpf_object__for_each_map(map, obj) {
+		int map_type = (int)bpf_map__type(map);
+		const char *map_name = bpf_map__name(map);
+		char map_json[2048];
+		int n;
+
+		(*maps)++;
+		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
+			continue;
+
+			(*ring_maps)++;
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			if (maps_pos > 0) {
+				n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), ",\n");
+				if (n > 0) maps_pos += n;
+			}
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos),
+				"        \"%s\" : ", map_name);
+			if (n > 0) maps_pos += n;
+		}
+
+		map_json[0] = '\0';
+		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+
+		if (maps_json_buf && maps_json_size > maps_pos) {
+			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
+			if (n > 0) maps_pos += n;
+			if (maps_pos < maps_json_size)
+				maps_json_buf[maps_pos] = '\0';
+		}
+
+		if (err)
+			goto out;
+	}
+
+	if (maps_json_buf && maps_pos < maps_json_size)
+		maps_json_buf[maps_pos] = '\0';
+
+out:
+	for (i = 0; i < link_count; i++)
+		bpf_link__destroy(links[i]);
+	if (obj)
+		bpf_object__close(obj);
+
+	return err;
+}
+
+static int netdata_core_arena_supported(void)
+{
+#if MY_LINUX_VERSION_CODE >= 395520
+	return 1;
+#else
+	return 0;
+#endif
+}
 #else
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
@@ -461,6 +583,19 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
+}
+static int netdata_core_run_buffer_object_test(const char *path, const char *ctrl_name,
+	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
+	char *maps_json_buf, int maps_json_size)
+{
+	(void)path; (void)ctrl_name; (void)map_level; (void)iterations;
+	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)maps_json_buf; (void)maps_json_size;
+	return -ENOSYS;
+}
+static int netdata_core_arena_supported(void)
+{
+	return 0;
 }
 #endif // MY_LINUX_VERSION_CODE >= 329728
 
@@ -537,6 +672,7 @@ type aggregateTestCase struct {
 	emitModeArg       bool
 	pidSupported      bool
 	bufferSupported   bool
+	arenaSupported    bool
 	bufferCtrl        string
 }
 
@@ -559,28 +695,29 @@ type aggregateState struct {
 	selectionMask     uint64
 	explicitSelection bool
 	bufferMode        bool
+	arenaMode         bool
 	bufferIterations  int
 	testsDir          string
 }
 
 var aggregateTests = []aggregateTestCase{
-	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "cstat_ctrl"},
-	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "dcstat_ctrl"},
+	{name: "cachestat", binary: "cachestat", selectionBit: selectCachestat, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "cstat_ctrl"},
+	{name: "dc", binary: "dc", selectionBit: selectDC, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "dcstat_ctrl"},
 	{name: "disk", binary: "disk", selectionBit: selectDisk},
-	{name: "dns", binary: "dns", selectionBit: selectDNS, bufferSupported: true},
-	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "fd_ctrl"},
+	{name: "dns", binary: "dns", selectionBit: selectDNS, bufferSupported: true, arenaSupported: true},
+	{name: "fd", binary: "fd", selectionBit: selectFD, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "fd_ctrl"},
 	{name: "hardirq", binary: "hardirq", selectionBit: selectHardirq},
 	{name: "mdflush", binary: "mdflush", selectionBit: selectMdflush, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "mount", binary: "mount", selectionBit: selectMount, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
 	{name: "networkviewer", binary: "networkviewer", selectionBit: selectNetworkviewer, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
-	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill, bufferSupported: true},
-	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "process_ctrl"},
-	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "shm_ctrl"},
+	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill, bufferSupported: true, arenaSupported: true},
+	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "process_ctrl"},
+	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "shm_ctrl"},
 	{name: "socket", binary: "socket", selectionBit: selectSocket, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
 	{name: "softirq", binary: "softirq", selectionBit: selectSoftirq},
-	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "swap_ctrl"},
+	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "swap_ctrl"},
 	{name: "sync", binary: "sync", selectionBit: selectSync, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
-	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, bufferCtrl: "vfs_ctrl"},
+	{name: "vfs", binary: "vfs", selectionBit: selectVFS, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "vfs_ctrl"},
 	{name: "nfs", binary: "filesystem", extraArg: "--nfs", selectionBit: selectNFS, modes: modeProbe},
 	{name: "ext4", binary: "filesystem", extraArg: "--ext4", selectionBit: selectExt4, modes: modeProbe},
 	{name: "btrfs", binary: "filesystem", extraArg: "--btrfs", selectionBit: selectBtrfs, modes: modeProbe},
@@ -795,6 +932,79 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	return result, 0
 }
 
+func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateResult, int) {
+	result := initResult(test)
+	result.mode = "arena"
+	result.binary = test.name + "_arena.bpf.o"
+	result.command = test.name + "_arena object"
+	if state.selectedPID >= 0 {
+		result.pid = state.selectedPID
+	}
+
+	if !test.arenaSupported {
+		result.status = "Unavailable"
+		result.detail = "Collector has no CO-RE arena object."
+		return result, 0
+	}
+
+	if C.netdata_core_arena_supported() == 0 {
+		result.status = "Unavailable"
+		result.detail = "Arena collection requires kernel >= 6.9."
+		return result, 0
+	}
+
+	mapLevel := state.selectedPID
+	if mapLevel < 0 {
+		mapLevel = pidMin
+	}
+
+	testsDir := state.testsDir
+	if testsDir == "" {
+		testsDir = ".."
+	}
+
+	objectPath := fmt.Sprintf("%s/%s_arena.bpf.o", testsDir, test.name)
+	_, _ = fmt.Fprintf(os.Stderr, "Running arena object test %s\n", result.command)
+
+	cPath := C.CString(objectPath)
+	defer C.free(unsafe.Pointer(cPath))
+
+	cCtrl := C.CString(test.bufferCtrl)
+	defer C.free(unsafe.Pointer(cCtrl))
+
+	attached := C.int(0)
+	skipped := C.int(0)
+	maps := C.int(0)
+	ringMaps := C.int(0)
+	var mapsBuf [4096]C.char
+	errCode := int(C.netdata_core_run_buffer_object_test(
+		cPath,
+		cCtrl,
+		C.int(mapLevel),
+		C.int(state.bufferIterations),
+		&attached,
+		&skipped,
+		&maps,
+		&ringMaps,
+		&mapsBuf[0],
+		C.int(len(mapsBuf)),
+	))
+	mapsJSON := C.GoString(&mapsBuf[0])
+	if errCode != 0 {
+		result.status = "Fail"
+		result.exitCode = errCode
+		result.detail = fmt.Sprintf("Arena object test failed with error %d.", errCode)
+		result.mapsJSON = mapsJSON
+		return result, 1
+	}
+
+	result.status = "Success"
+	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
+		int(attached), int(skipped), int(maps), int(ringMaps))
+	result.mapsJSON = mapsJSON
+	return result, 0
+}
+
 func printHelp(out io.Writer, name string) {
 	_, _ = fmt.Fprintf(out,
 		"%s runs the CO-RE tests in-process and aggregates their results.\n\n"+
@@ -804,9 +1014,10 @@ func printHelp(out io.Writer, name string) {
 			"  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"+
 			"  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"+
 			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
-			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
+			"  --tests-dir PATH  Base directory used to locate *_arena.bpf.o files.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
 			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+
+			"  --arena           Test CO-RE arena BPF objects directly from *.bpf.o files.\n"+
 			"\n"+
 			"Selectors:\n"+
 			"  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"+
@@ -932,6 +1143,11 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 		case "all":
 			state.selectionMask |= selectAllNonFilesystem
 			state.explicitSelection = true
+		case "arena":
+			if state.bufferMode {
+				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
+			}
+			state.arenaMode = true
 		case "cachestat":
 			state.selectionMask |= selectCachestat
 			state.explicitSelection = true
@@ -1002,6 +1218,9 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			state.selectionMask |= selectZFS
 			state.explicitSelection = true
 		case "buffer":
+			if state.arenaMode {
+				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
+			}
 			state.bufferMode = true
 		default:
 			return state, logPath, false, fmt.Errorf("unrecognized option '--%s'", option)
@@ -1058,6 +1277,20 @@ func main() {
 			}
 
 			result, exitCode := executeBufferTest(state, test)
+			if exitCode != 0 {
+				failures++
+			}
+			writeResult(report, result, &first)
+			resultCount++
+			continue
+		}
+
+		if state.arenaMode {
+			if !test.arenaSupported {
+				continue
+			}
+
+			result, exitCode := executeArenaTest(state, test)
 			if exitCode != 0 {
 				failures++
 			}

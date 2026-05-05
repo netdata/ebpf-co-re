@@ -54,6 +54,24 @@ else
 RINGBUF_SKELS =
 endif
 
+# BPF_MAP_TYPE_ARENA requires kernel >= 6.9.
+ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 395520 ; echo $$?),0)
+ARENA_APPS = cachestat_arena \
+             dc_arena \
+             dns_arena \
+             fd_arena \
+             oomkill_arena \
+             process_arena \
+             shm_arena \
+             swap_arena \
+             vfs_arena \
+             #
+ARENA_OBJS = $(patsubst %,%.bpf.o,$(ARENA_APPS))
+else
+ARENA_APPS =
+ARENA_OBJS =
+endif
+
 AGGREGATE_TESTER = core_tester
 AGGREGATE_TESTER_GO = core_tester_go
 GO ?= go
@@ -89,7 +107,7 @@ dns: dns.o $(DNS_HELPER_OBJ)
 $(DNS_HELPER_OBJ): ../kernel-collector/tests/tester_dns.c libbpf
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -c $< -o $@
 
-compress: $(APPS) $(RINGBUF_SKELS)
+compress: $(APPS) $(RINGBUF_SKELS) $(ARENA_OBJS)
 
 aggregate/%.o: %.c %.skel.h
 	mkdir -p aggregate
@@ -101,10 +119,10 @@ $(LOADER_OBJ): netdata_core_loader.c netdata_core_loader.h
 $(AGGREGATE_LIB): $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(LOADER_OBJ)
 	ar rcs $@ $^
 
-$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS)
+$(OUTPUT)$(AGGREGATE_TESTER): core_tester.c $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) $(RINGBUF_SKELS) $(ARENA_OBJS)
 	$(CC) $(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) $(INCLUDES) -L../.local_libbpf $< $(LOADER_OBJ) $(AGGREGATE_APP_OBJECTS) $(DNS_HELPER_OBJ) -lbpf -lelf -lz -o $@
 
-$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(wildcard core_tester_go/*.go)
+$(OUTPUT)$(AGGREGATE_TESTER_GO): $(AGGREGATE_LIB) $(RINGBUF_SKELS) $(ARENA_OBJS) $(wildcard core_tester_go/*.go)
 	CGO_ENABLED=1 \
 	CGO_CFLAGS="$(CFLAGS) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -I$(CURDIR) -I$(CURDIR)/../.local_libbpf -I$(CURDIR)/../includes -I$(CURDIR)/../kernel-collector/includes -I$(CURDIR)/../libbpf/src -I$(CURDIR)/../libbpf/include/uapi" \
 	CGO_LDFLAGS="-L$(CURDIR)/aggregate -lnetdata_tests -L$(CURDIR)/../.local_libbpf -lbpf -lelf -lz" \
