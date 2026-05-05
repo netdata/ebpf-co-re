@@ -11,8 +11,15 @@
 #endif
 
 #include "netdata_core.h"
+#include "netdata_arena_common.h"
 #include "netdata_vfs.h"
 #include "netdata_vfs_buffer.h"
+
+#ifdef NETDATA_ARENA_MODE
+#define NETDATA_ARENA_PTR __arena
+#else
+#define NETDATA_ARENA_PTR
+#endif
 /************************************************************************************
  *
  *                                 MAPS Section
@@ -29,15 +36,15 @@ NETDATA_BPF_ARRAY_DEF(vfs_ctrl, __u32, __u64, NETDATA_CONTROLLER_END);
  *
  ***********************************************************************************/
 
-static __always_inline void netdata_vfs_fill_event(struct netdata_vfs_event_t *ev, void *ctrl)
+static __always_inline void netdata_vfs_fill_event(struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev, void *ctrl)
 {
     __u32 tgid = 0;
     ev->ct   = bpf_ktime_get_ns();
     ev->pid  = netdata_get_pid(ctrl, &tgid);
     ev->tgid = tgid;
-    libnetdata_update_uid_gid(&ev->uid, &ev->gid);
+    libnetdata_update_uid_gid((__u32 *)&ev->uid, (__u32 *)&ev->gid);
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
-    bpf_get_current_comm(ev->name, TASK_COMM_LEN);
+    bpf_get_current_comm((char *)ev->name, TASK_COMM_LEN);
 #else
     ev->name[0] = '\0';
 #endif
@@ -74,7 +81,7 @@ int netdata_sys_write_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -111,7 +118,7 @@ int netdata_sys_writev_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -148,7 +155,7 @@ int netdata_sys_read_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -185,7 +192,7 @@ int netdata_sys_readv_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -220,7 +227,7 @@ int netdata_sys_unlink_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -255,7 +262,7 @@ int netdata_vfs_fsync_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -290,7 +297,7 @@ int netdata_vfs_open_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
@@ -325,7 +332,7 @@ int netdata_vfs_create_buffer(struct pt_regs *ctx)
     if (!monitor_apps(&vfs_ctrl))
         return 0;
 
-    struct netdata_vfs_event_t *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
+    struct netdata_vfs_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&vfs_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 

@@ -12,8 +12,15 @@
 #endif
 
 #include "netdata_core.h"
+#include "netdata_arena_common.h"
 #include "netdata_socket.h"
 #include "netdata_dns_buffer.h"
+
+#ifdef NETDATA_ARENA_MODE
+#define NETDATA_ARENA_PTR __arena
+#else
+#define NETDATA_ARENA_PTR
+#endif
 
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
@@ -174,7 +181,7 @@ int socket__dns_filter_buffer(struct __sk_buff *skb)
     if (!is_query && !is_response)
         return 0;
 
-    struct netdata_dns_event_t *ev = bpf_ringbuf_reserve(&dns_events, sizeof(*ev), 0);
+    struct netdata_dns_event_t NETDATA_ARENA_PTR *ev = bpf_ringbuf_reserve(&dns_events, sizeof(*ev), 0);
     if (!ev)
         return 0;
 
