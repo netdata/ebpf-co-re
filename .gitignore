@@ -10,6 +10,7 @@
 
 *.skel.h
 *.a
+*.d
 
 src/embedded
 src/tests/*

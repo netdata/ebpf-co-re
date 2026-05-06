@@ -93,7 +93,7 @@ $(LIBBPF_ARTIFACT):
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(filter %.c,$^) -o $@
+	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
