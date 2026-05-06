@@ -43,7 +43,11 @@ static __always_inline void netdata_swap_fill_event(struct netdata_swap_event_t 
     ev->ct   = bpf_ktime_get_ns();
     ev->pid  = netdata_get_pid(ctrl, &tgid);
     ev->tgid = tgid;
-    libnetdata_update_uid_gid((__u32 *)&ev->uid, (__u32 *)&ev->gid);
+    {
+        __u64 uid_gid = bpf_get_current_uid_gid();
+        ev->uid = (__u32)uid_gid;
+        ev->gid = (__u32)(uid_gid >> 32);
+    }
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(4,11,0))
     bpf_get_current_comm(comm, TASK_COMM_LEN);
 #pragma unroll
