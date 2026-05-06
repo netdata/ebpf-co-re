@@ -1,4 +1,5 @@
 LIBBPF = ../libbpf
+LIBBPF_ARTIFACT = ../.local_libbpf/libbpf.a
 CFLAGS = -Wall -ggdb
 INCLUDES = -I../.local_libbpf/ -I../includes/ -I$(LIBBPF)/src/ -I. -I../kernel-collector/includes/ -I$(LIBBPF)/include/uapi/
 CLANG ?= clang 
@@ -6,13 +7,16 @@ LLVM_STRIP ?= llvm-strip
 OUTPUT = tests/
 ARCH := $(shell uname -m | sed 's/x86_64/x86/')
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 \
-			 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }') 
+				 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }') 
 KERNEL_VERSION="$(shell cat /proc/sys/kernel/osrelease)"
 FIRST_KERNEL_VERSION=$(shell sh ../kernel-collector/tools/complement.sh "$(KERNEL_VERSION)")
 VER_MAJOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f1)
 VER_MINOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f2)
 VER_PATCH=$(shell echo $(KERNEL_VERSION) | cut -d. -f3 | cut -d\- -f1)
 RUNNING_VERSION_CODE=$(shell echo $$(( $(VER_MAJOR) * 65536 + $(VER_MINOR) * 256 + $(VER_PATCH))) )
+BPF_DEPFILES = $(patsubst %.bpf.c,%.bpf.d,$(wildcard *.bpf.c))
+
+-include $(BPF_DEPFILES)
 
 _LIBC ?= glibc
 
@@ -83,11 +87,13 @@ DNS_HELPER_OBJ = dns_tester_legacy.o
 
 all: compress $(OUTPUT)$(AGGREGATE_TESTER) $(OUTPUT)$(AGGREGATE_TESTER_GO)
 
-libbpf:
+libbpf: $(LIBBPF_ARTIFACT)
+
+$(LIBBPF_ARTIFACT):
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
+	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(filter %.c,$^) -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
