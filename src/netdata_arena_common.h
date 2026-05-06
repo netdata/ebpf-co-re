@@ -27,7 +27,6 @@
         __uint(type, BPF_MAP_TYPE_ARENA); \
         __uint(map_flags, BPF_F_MMAPABLE); \
         __uint(max_entries, NETDATA_ARENA_MAP_PAGES); \
-        __ulong(map_extra, NETDATA_ARENA_MAP_EXTRA); \
     } NAME SEC(".maps")
 
 #define NETDATA_ARENA_QUEUE_DECL(PREFIX, EVENT_TYPE, SLOT_COUNT) \
