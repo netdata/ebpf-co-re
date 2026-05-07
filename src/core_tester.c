@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <bpf/bpf.h>
@@ -692,6 +693,77 @@ static int test_ringbuf_map(struct bpf_map *map, int iterations,
     return op_error;
 }
 
+#if MY_LINUX_VERSION_CODE >= 395520
+static int test_arena_map(struct bpf_map *map, int iterations,
+                          char *map_json_buf, size_t map_json_size)
+{
+    int fd = bpf_map__fd(map);
+    uint32_t key_size = bpf_map__key_size(map);
+    uint32_t value_size = bpf_map__value_size(map);
+    size_t arena_sz = (size_t)bpf_map__max_entries(map) * (size_t)sysconf(_SC_PAGE_SIZE);
+    size_t data_sz = 0;
+    /* arena is already mmap'd by libbpf at load time; MAP_FIXED + map_extra required */
+    void *arena_mem = bpf_map__initial_value(map, &data_sz);
+    int setup_error = arena_mem ? 0 : -EINVAL;
+    uint32_t prev_head = 0;
+    size_t pos = 0;
+    char errbuf[128];
+    int n, i;
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "{\n"
+        "            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+        "                       \"Type\" : %u,\n"
+        "                       \"FD\" : %d,\n"
+        "                       \"Data\" : [\n",
+        key_size, value_size, (unsigned)BPF_MAP_TYPE_ARENA, fd);
+    if (n > 0) pos += (size_t)n;
+
+    if (arena_mem)
+        prev_head = *(volatile uint32_t *)arena_mem;
+
+    for (i = 0; i < iterations; i++) {
+        uint32_t cur_head = 0;
+        uint32_t delta = 0;
+
+        sleep(10);
+
+        if (arena_mem) {
+            cur_head = *(volatile uint32_t *)arena_mem;
+            delta = cur_head - prev_head;
+            prev_head = cur_head;
+        }
+
+        if (i > 0 && pos < map_json_size - 1) {
+            n = snprintf(map_json_buf + pos, map_json_size - pos, ",\n");
+            if (n > 0) pos += (size_t)n;
+        }
+
+        n = snprintf(map_json_buf + pos, map_json_size - pos,
+            "                                    "
+            "{ \"Iteration\" : %d, \"Mode\" : \"arena_consumer\", \"Setup\" : %d, "
+            "\"Operation Result\" : %u, \"Samples\" : %u, \"Bytes\" : 0, "
+            "\"Available\" : 0, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+            "\"Error Message\" : \"%s\" }",
+            i, !setup_error, (unsigned)delta, (unsigned)delta, arena_sz,
+            setup_error, format_error(setup_error, errbuf, sizeof(errbuf)));
+        if (n > 0) pos += (size_t)n;
+        if (pos >= map_json_size - 1)
+            pos = map_json_size - 1;
+    }
+
+    n = snprintf(map_json_buf + pos, map_json_size - pos,
+        "\n                                ]\n"
+        "                      }\n"
+        "        }");
+    if (n > 0) pos += (size_t)n;
+    if (pos < map_json_size)
+        map_json_buf[pos] = '\0';
+
+    return setup_error;
+}
+#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+
 static int netdata_core_symbol_in_kallsyms(const char *name)
 {
     FILE *f;
@@ -827,11 +899,17 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
     link_count = *attached;
 
     bpf_object__for_each_map(map, obj) {
+        enum bpf_map_type map_type = bpf_map__type(map);
         const char *map_name = bpf_map__name(map);
+        int tracked = map_is_ringbuf(map_type);
         int n;
 
         (*maps)++;
-        if (!map_is_ringbuf(bpf_map__type(map)))
+#if MY_LINUX_VERSION_CODE >= 395520
+        if (!tracked)
+            tracked = (map_type == BPF_MAP_TYPE_ARENA);
+#endif
+        if (!tracked)
             continue;
 
         if (maps_json_pos > 0 && maps_json_pos < maps_json_size - 1) {
@@ -844,8 +922,16 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
                      "        \"%s\" : ", map_name);
         if (n > 0) maps_json_pos += (size_t)n;
 
-        (*ringbuf_maps)++;
+        if (map_is_ringbuf(map_type))
+            (*ringbuf_maps)++;
+
         map_json_buf[0] = '\0';
+#if MY_LINUX_VERSION_CODE >= 395520
+        if (map_type == BPF_MAP_TYPE_ARENA)
+            err = test_arena_map(map, iterations,
+                                 map_json_buf, sizeof(map_json_buf));
+        else
+#endif
         err = test_ringbuf_map(map, iterations,
                                map_json_buf, sizeof(map_json_buf));
 

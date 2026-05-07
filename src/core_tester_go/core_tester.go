@@ -4,6 +4,7 @@ package main
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -346,6 +347,80 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	return op_err;
 }
 
+#if MY_LINUX_VERSION_CODE >= 395520
+static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
+				       char *map_json_buf, int map_json_size)
+{
+	int fd = bpf_map__fd(map);
+	unsigned int key_size = (unsigned int)bpf_map__key_size(map);
+	unsigned int value_size = (unsigned int)bpf_map__value_size(map);
+	size_t arena_sz = (size_t)bpf_map__max_entries(map) * (size_t)sysconf(_SC_PAGE_SIZE);
+	size_t data_sz = 0;
+	// arena is already mmap'd by libbpf at load time; MAP_FIXED + map_extra required
+	void *arena_mem = bpf_map__initial_value(map, &data_sz);
+	int setup_err = arena_mem ? 0 : -EINVAL;
+	unsigned int prev_head = 0;
+	int pos = 0;
+	int n, i;
+
+	if (iterations < 1)
+		iterations = 1;
+
+	n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+		"{\n"
+		"            \"Info\" : { \"Length\" : { \"Key\" : %u, \"Value\" : %u},\n"
+		"                       \"Type\" : %d,\n"
+		"                       \"FD\" : %d,\n"
+		"                       \"Data\" : [\n",
+		key_size, value_size, BPF_MAP_TYPE_ARENA, fd);
+	if (n > 0) pos += n;
+
+	if (arena_mem)
+		prev_head = *(volatile unsigned int *)arena_mem;
+
+	for (i = 0; i < iterations; i++) {
+		unsigned int cur_head = 0;
+		unsigned int delta = 0;
+
+		sleep(10);
+
+		if (arena_mem) {
+			cur_head = *(volatile unsigned int *)arena_mem;
+			delta = cur_head - prev_head;
+			prev_head = cur_head;
+		}
+
+		if (pos < map_json_size - 1) {
+			if (i > 0) {
+				n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos), ",\n");
+				if (n > 0) pos += n;
+			}
+			n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+				"                                    "
+				"{ \"Iteration\" : %d, \"Mode\" : \"arena_consumer\", \"Setup\" : %d, "
+				"\"Operation Result\" : %u, \"Samples\" : %u, \"Bytes\" : 0, "
+				"\"Available\" : 0, \"Ring Size\" : %zu, \"Error Code\" : %d, "
+				"\"Error Message\" : \"%s\" }",
+				i, !setup_err, delta, delta, arena_sz,
+				setup_err, setup_err ? strerror(-setup_err) : "No error information");
+			if (n > 0) pos += n;
+		}
+	}
+
+	if (pos < map_json_size - 1) {
+		n = snprintf(map_json_buf + pos, (size_t)(map_json_size - pos),
+			"\n                                ]\n"
+			"                      }\n"
+			"        }");
+		if (n > 0) pos += n;
+	}
+	if (pos < map_json_size)
+		map_json_buf[pos] = '\0';
+
+	return setup_err;
+}
+#endif // MY_LINUX_VERSION_CODE >= 395520
+
 // Check whether a kernel symbol is present in /proc/kallsyms.
 static int netdata_core_symbol_in_kallsyms(const char *name)
 {
@@ -616,10 +691,9 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 		int n;
 
 		(*maps)++;
-		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF)
+		if (map_type != BPF_MAP_TYPE_RINGBUF && map_type != BPF_MAP_TYPE_USER_RINGBUF
+		    && map_type != BPF_MAP_TYPE_ARENA)
 			continue;
-
-		(*ring_maps)++;
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			if (maps_pos > 0) {
@@ -631,8 +705,14 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 			if (n > 0) maps_pos += n;
 		}
 
+		if (map_type == BPF_MAP_TYPE_RINGBUF || map_type == BPF_MAP_TYPE_USER_RINGBUF)
+			(*ring_maps)++;
+
 		map_json[0] = '\0';
-		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+		if (map_type == BPF_MAP_TYPE_ARENA)
+			err = netdata_core_test_arena_map(map, iterations, map_json, (int)sizeof(map_json));
+		else
+			err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
