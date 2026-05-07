@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +12,9 @@
 #include "../kernel-collector/tests/tester_dns.h"
 
 #include "dns.skel.h"
+
+/* required by log macros in tester_dns.c which expect this symbol at link time */
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #define NETDATA_DNS_MAX_PORTS 32
 #define NETDATA_DNS_DEFAULT_PORT 53
