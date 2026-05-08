@@ -736,6 +736,16 @@ out:
 
 	return err;
 }
+#else // MY_LINUX_VERSION_CODE < 395520 (but >= 329728): arena not supported
+static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
+	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
+	char *maps_json_buf, int maps_json_size)
+{
+	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
+	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)maps_json_buf; (void)maps_json_size;
+	return -ENOSYS;
+}
 #endif // MY_LINUX_VERSION_CODE >= 395520
 
 static int netdata_core_arena_supported(void)
