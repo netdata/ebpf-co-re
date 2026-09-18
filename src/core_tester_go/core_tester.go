@@ -214,7 +214,8 @@ static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_
 }
 
 static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
-					 char *map_json_buf, int map_json_size)
+					 char *map_json_buf, int map_json_size, size_t *total_samples,
+					 size_t *ring_capacity)
 {
 	int map_type = (int)bpf_map__type(map);
 	int fd = bpf_map__fd(map);
@@ -226,6 +227,8 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	int i;
 	int pos = 0;
 	int n;
+	size_t collected = 0;
+	size_t capacity = 0;
 
 	if (iterations < 1)
 		iterations = 1;
@@ -266,11 +269,13 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 
 				iter_samples = stats.samples - prev.samples;
 				iter_bytes = stats.bytes - prev.bytes;
+				collected += iter_samples;
 				prev = stats;
 
 				if (ring) {
 					ring_sz = ring__size(ring);
 					avail = ring__avail_data_size(ring);
+					capacity = ring_sz;
 				}
 			}
 
@@ -351,12 +356,18 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	if (pos < map_json_size)
 		map_json_buf[pos] = '\0';
 
+	if (total_samples)
+		*total_samples = collected;
+	if (ring_capacity)
+		*ring_capacity = capacity;
+
 	return op_err;
 }
 
 #if MY_LINUX_VERSION_CODE >= 395520
 static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
-				       char *map_json_buf, int map_json_size)
+				       char *map_json_buf, int map_json_size, size_t *total_samples,
+				       size_t *ring_capacity)
 {
 	int fd = bpf_map__fd(map);
 	unsigned int key_size = (unsigned int)bpf_map__key_size(map);
@@ -369,6 +380,8 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 	unsigned int prev_head = 0;
 	int pos = 0;
 	int n, i;
+	size_t collected = 0;
+	size_t capacity = 0;
 
 	if (iterations < 1)
 		iterations = 1;
@@ -394,7 +407,9 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 		if (arena_mem) {
 			cur_head = *(volatile unsigned int *)arena_mem;
 			delta = cur_head - prev_head;
+			collected += delta;
 			prev_head = cur_head;
+			capacity = arena_sz;
 		}
 
 		if (pos < map_json_size - 1) {
@@ -423,6 +438,11 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 	}
 	if (pos < map_json_size)
 		map_json_buf[pos] = '\0';
+
+	if (total_samples)
+		*total_samples = collected;
+	if (ring_capacity)
+		*ring_capacity = capacity;
 
 	return setup_err;
 }
@@ -500,7 +520,8 @@ static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
 
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 						     int *attached, int *skipped, int *maps, int *ring_maps,
-						     char *maps_json_buf, int maps_json_size)
+						     char *maps_json_buf, int maps_json_size, size_t *total_samples,
+						     size_t *ring_capacity)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -517,6 +538,10 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	*skipped = 0;
 	*maps = 0;
 	*ring_maps = 0;
+	if (total_samples)
+		*total_samples = 0;
+	if (ring_capacity)
+		*ring_capacity = 0;
 
 	if (maps_json_buf && maps_json_size > 0)
 		maps_json_buf[0] = '\0';
@@ -594,7 +619,16 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 		}
 
 		map_json[0] = '\0';
-		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+		{
+			size_t map_total_samples = 0;
+			size_t map_ring_capacity = 0;
+			err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json),
+							    &map_total_samples, &map_ring_capacity);
+			if (!err && total_samples)
+				*total_samples += map_total_samples;
+			if (!err && ring_capacity)
+				*ring_capacity += map_ring_capacity;
+		}
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
@@ -622,7 +656,8 @@ out:
 #if MY_LINUX_VERSION_CODE >= 395520
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 					    int *attached, int *skipped, int *maps, int *ring_maps,
-					    char *maps_json_buf, int maps_json_size)
+					    char *maps_json_buf, int maps_json_size, size_t *total_samples,
+					    size_t *ring_capacity)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_arena_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -639,6 +674,10 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 	*skipped = 0;
 	*maps = 0;
 	*ring_maps = 0;
+	if (total_samples)
+		*total_samples = 0;
+	if (ring_capacity)
+		*ring_capacity = 0;
 
 	if (maps_json_buf && maps_json_size > 0)
 		maps_json_buf[0] = '\0';
@@ -716,10 +755,20 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 			(*ring_maps)++;
 
 		map_json[0] = '\0';
-		if (map_type == BPF_MAP_TYPE_ARENA)
-			err = netdata_core_test_arena_map(map, iterations, map_json, (int)sizeof(map_json));
-		else
-			err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+		{
+			size_t map_total_samples = 0;
+			size_t map_ring_capacity = 0;
+			if (map_type == BPF_MAP_TYPE_ARENA)
+				err = netdata_core_test_arena_map(map, iterations, map_json, (int)sizeof(map_json),
+								  &map_total_samples, &map_ring_capacity);
+			else
+				err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json),
+							    &map_total_samples, &map_ring_capacity);
+			if (!err && total_samples)
+				*total_samples += map_total_samples;
+			if (!err && ring_capacity)
+				*ring_capacity += map_ring_capacity;
+		}
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
@@ -746,10 +795,12 @@ out:
 #else // MY_LINUX_VERSION_CODE < 395520 (but >= 329728): arena not supported
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
@@ -766,19 +817,23 @@ static int netdata_core_arena_supported(void)
 #else
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
@@ -870,15 +925,17 @@ type aggregateTestCase struct {
 }
 
 type aggregateResult struct {
-	name     string
-	binary   string
-	mode     string
-	pid      int
-	status   string
-	exitCode int
-	command  string
-	detail   string
-	mapsJSON string
+	name               string
+	binary             string
+	mode               string
+	pid                int
+	status             string
+	exitCode           int
+	command            string
+	detail             string
+	mapsJSON           string
+	socketsCollected   *uint64
+	socketRingCapacity *uint64
 }
 
 type aggregateState struct {
@@ -984,6 +1041,12 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	jsonWriteString(out, result.command)
 	_, _ = io.WriteString(out, ",\n      \"detail\": ")
 	jsonWriteString(out, result.detail)
+	if result.socketsCollected != nil {
+		_, _ = fmt.Fprintf(out, ",\n      \"sockets_collected\": %d", *result.socketsCollected)
+	}
+	if result.socketRingCapacity != nil {
+		_, _ = fmt.Fprintf(out, ",\n      \"socket_ring_capacity\": %d", *result.socketRingCapacity)
+	}
 	if result.mapsJSON != "" {
 		_, _ = fmt.Fprintf(out, ",\n      \"maps\": {\n%s\n      }", result.mapsJSON)
 	}
@@ -1096,6 +1159,8 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	skipped := C.int(0)
 	maps := C.int(0)
 	ringMaps := C.int(0)
+	totalSamples := C.size_t(0)
+	ringCapacity := C.size_t(0)
 	var mapsBuf [4096]C.char
 	errCode := int(C.netdata_core_run_buffer_skel_test(
 		cName,
@@ -1108,6 +1173,8 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		&ringMaps,
 		&mapsBuf[0],
 		C.int(len(mapsBuf)),
+		&totalSamples,
+		&ringCapacity,
 	))
 	mapsJSON := C.GoString(&mapsBuf[0])
 	if errCode != 0 {
@@ -1121,6 +1188,14 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
 		int(attached), int(skipped), int(maps), int(ringMaps))
+	if test.name == "socket" {
+		collected := uint64(totalSamples)
+		capacity := uint64(ringCapacity)
+		result.socketsCollected = &collected
+		result.socketRingCapacity = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring usage: %d/%d.",
+			result.detail, collected, capacity)
+	}
 	result.mapsJSON = mapsJSON
 	return result, 0
 }
@@ -1163,6 +1238,8 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	skipped := C.int(0)
 	maps := C.int(0)
 	ringMaps := C.int(0)
+	totalSamples := C.size_t(0)
+	ringCapacity := C.size_t(0)
 	var mapsBuf [4096]C.char
 	errCode := int(C.netdata_core_run_arena_skel_test(
 		cName,
@@ -1175,6 +1252,8 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 		&ringMaps,
 		&mapsBuf[0],
 		C.int(len(mapsBuf)),
+		&totalSamples,
+		&ringCapacity,
 	))
 	mapsJSON := C.GoString(&mapsBuf[0])
 	if errCode != 0 {
@@ -1188,6 +1267,14 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
 		int(attached), int(skipped), int(maps), int(ringMaps))
+	if test.name == "socket" {
+		collected := uint64(totalSamples)
+		capacity := uint64(ringCapacity)
+		result.socketsCollected = &collected
+		result.socketRingCapacity = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring usage: %d/%d.",
+			result.detail, collected, capacity)
+	}
 	result.mapsJSON = mapsJSON
 	return result, 0
 }
