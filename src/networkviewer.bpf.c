@@ -438,8 +438,6 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
     NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        direction = NETDATA_SOCKET_DIRECTION_INBOUND;
-        set_common_udp_nv_data(&idx, val, sk, family, direction);
         return 0;
     }
 
@@ -469,10 +467,6 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
     NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
-        set_common_udp_nv_data(&idx, val, sk, family, direction);
-        val->closed = 1;
-
         return 0;
     }
 
@@ -721,9 +715,6 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        direction = NETDATA_SOCKET_DIRECTION_INBOUND;
-        set_common_udp_nv_data(&idx, val, sk, family, direction);
-        BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
         return 0;
     }
 
@@ -753,10 +744,6 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
     NETDATA_SOCKET_DIRECTION direction;
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
-        direction = NETDATA_SOCKET_DIRECTION_OUTBOUND;
-        set_common_udp_nv_data(&idx, val, sk, family, direction);
-        BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
-        val->closed = 1;
         return 0;
     }
 
@@ -775,4 +762,3 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
 }
 
 char _license[] SEC("license") = "GPL";
-

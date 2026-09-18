@@ -20,6 +20,7 @@
 
 enum core_process {
     PROCESS_RELEASE_TASK_NAME,
+    PROCESS_WAKE_UP_NEW_TASK_NAME,
     PROCESS_SYS_CLONE,
     PROCESS_SYS_CLONE3,
     PROCESS_SYS_FORK,
@@ -28,6 +29,7 @@ enum core_process {
 
 static char *names[] = {
     "release_task",
+    "wake_up_new_task",
     "__x64_sys_clone",
     "__x64_sys_clone3",
     "_do_fork",
@@ -85,6 +87,12 @@ static inline int process_attach_kprobe_target(struct process_bpf *obj)
     if (ret)
         goto endakt;
 
+    obj->links.netdata_wake_up_new_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_wake_up_new_task_probe,
+                                                                    false, names[PROCESS_WAKE_UP_NEW_TASK_NAME]);
+    ret = libbpf_get_error(obj->links.netdata_wake_up_new_task_probe);
+    if (ret)
+        goto endakt;
+
 #if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,9,16))
     obj->links.netdata_do_fork_probe = bpf_program__attach_kprobe(obj->progs.netdata_do_fork_probe,
                                                                     false, names[PROCESS_SYS_FORK]);
@@ -119,22 +127,14 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
         ebpf_disable_trampoline(obj);
         /*
          * Keep tracepoint mode aligned with the older process collector:
-         * rely on sched_process_* hooks and avoid optional sys_exit_*
-         * tracepoints that can reject attachment on some systems.
+         * avoid optional sys_exit_* tracepoints that can reject attachment
+         * on some systems.
          */
         ebpf_disable_tracepoints(obj);
     }
 
 #if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,3,0))
     ebpf_disable_clone3(obj);
-#endif
-
-#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(6,16,0))
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, true);
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, true);
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, false);
 #endif
 
     int ret = process_bpf__load(obj);

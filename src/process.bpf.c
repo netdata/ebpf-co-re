@@ -108,24 +108,31 @@ static __always_inline int netdata_common_fork_clone(int ret)
     return 0;
 }
 
-static void netdata_tracepoint_common_sched_process_fork(int parent_pid, int child_pid)
+static __always_inline int netdata_common_wake_up_new_task(struct task_struct *child)
 {
     struct netdata_pid_stat_t data = { };
     struct netdata_pid_stat_t *fill;
     __u32 key = 0;
     __u32 tgid = 0;
+    __u32 child_pid = 0;
+    __u32 child_tgid = 0;
+
+    if (!child)
+        return 0;
+
+    /* pid == tgid identifies a process; a thread has a distinct task ID. */
+    if (bpf_probe_read(&child_pid, sizeof(child_pid), &child->pid) ||
+        bpf_probe_read(&child_tgid, sizeof(child_tgid), &child->tgid))
+        return 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
 
-    // Parent ID = 1 means that init called process/thread creation
-    int thread = 0;
-    if (parent_pid != child_pid && parent_pid != 1) {
-        thread = 1;
+    int thread = (child_pid != child_tgid) ? 1 : 0;
+    if (thread)
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
-    }
 
     if (!monitor_apps(&process_ctrl))
-        return;
+        return 0;
 
     fill = netdata_get_pid_structure(&key, &tgid, &process_ctrl, &tbl_pid_stats);
     if (fill) {
@@ -145,6 +152,7 @@ static void netdata_tracepoint_common_sched_process_fork(int parent_pid, int chi
         libnetdata_update_global(&process_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
 
+    return 0;
 }
 
 
@@ -204,22 +212,6 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     return 0;
 }
 
-// It must be always enabled
-SEC("tracepoint/sched/sched_process_fork")
-int netdata_tracepoint_sched_process_fork(struct netdata_sched_process_fork *ptr)
-{
-    netdata_tracepoint_common_sched_process_fork(ptr->parent_pid, ptr->child_pid);
-    return 0;
-}
-
-// It must be always enabled
-SEC("tracepoint/sched/sched_process_fork")
-int netdata_tracepoint_sched_process_fork_v2(struct netdata_sched_process_fork_v2 *ptr)
-{
-    netdata_tracepoint_common_sched_process_fork(ptr->parent_pid, ptr->child_pid);
-    return 0;
-}
-
 SEC("tracepoint/syscalls/sys_exit_clone")
 int netdata_clone_exit(struct trace_event_raw_sys_exit *ctx)
 {
@@ -258,6 +250,13 @@ SEC("kprobe/release_task")
 int BPF_KPROBE(netdata_release_task_probe)
 {
     return netdata_common_release_task();
+}
+
+SEC("kprobe/wake_up_new_task")
+int BPF_KPROBE(netdata_wake_up_new_task_probe)
+{
+    struct task_struct *child = (struct task_struct *)PT_REGS_PARM1(ctx);
+    return netdata_common_wake_up_new_task(child);
 }
 
 // Must be disabled on user ring when kernel is newer than 5.9.16
