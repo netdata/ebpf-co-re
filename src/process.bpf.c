@@ -1,6 +1,7 @@
 #include "vmlinux_508.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
+#include "bpf_core_read.h"
 
 #include "netdata_core.h"
 #include "netdata_process.h"
@@ -121,8 +122,8 @@ static __always_inline int netdata_common_wake_up_new_task(struct task_struct *c
         return 0;
 
     /* pid == tgid identifies a process; a thread has a distinct task ID. */
-    if (bpf_probe_read(&child_pid, sizeof(child_pid), &child->pid) ||
-        bpf_probe_read(&child_tgid, sizeof(child_tgid), &child->tgid))
+    if (BPF_CORE_READ_INTO(&child_pid, child, pid) ||
+        BPF_CORE_READ_INTO(&child_tgid, child, tgid))
         return 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
@@ -153,6 +154,14 @@ static __always_inline int netdata_common_wake_up_new_task(struct task_struct *c
     }
 
     return 0;
+}
+
+SEC("tp_btf/sched_process_fork")
+int BPF_PROG(netdata_sched_process_fork_btf, struct task_struct *parent,
+             struct task_struct *child)
+{
+    (void)parent;
+    return netdata_common_wake_up_new_task(child);
 }
 
 

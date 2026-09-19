@@ -1,6 +1,7 @@
 #include "vmlinux_508.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
+#include "bpf_core_read.h"
 
 #ifndef KERNEL_VERSION
 #define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
@@ -122,16 +123,18 @@ int netdata_tracepoint_sched_process_exec_buffer(struct netdata_sched_process_ex
     return 0;
 }
 
-SEC("kprobe/wake_up_new_task")
-int netdata_wake_up_new_task_buffer(struct pt_regs *ctx)
+SEC("tp_btf/sched_process_fork")
+int BPF_PROG(netdata_sched_process_fork_buffer, struct task_struct *parent,
+             struct task_struct *child)
 {
-    struct task_struct *child = (struct task_struct *)PT_REGS_PARM1(ctx);
     __u32 child_pid = 0;
     __u32 child_tgid = 0;
 
+    (void)parent;
+
     if (!child ||
-        bpf_probe_read(&child_pid, sizeof(child_pid), &child->pid) ||
-        bpf_probe_read(&child_tgid, sizeof(child_tgid), &child->tgid))
+        BPF_CORE_READ_INTO(&child_pid, child, pid) ||
+        BPF_CORE_READ_INTO(&child_tgid, child, tgid))
         return 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);

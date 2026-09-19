@@ -275,7 +275,8 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 				if (ring) {
 					ring_sz = ring__size(ring);
 					avail = ring__avail_data_size(ring);
-					capacity = ring_sz;
+					if (value_size)
+						capacity = ring_sz / value_size;
 				}
 			}
 
@@ -409,7 +410,8 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 			delta = cur_head - prev_head;
 			collected += delta;
 			prev_head = cur_head;
-			capacity = arena_sz;
+			if (value_size && data_sz > sizeof(unsigned int))
+				capacity = (data_sz - sizeof(unsigned int)) / value_size;
 		}
 
 		if (pos < map_json_size - 1) {
@@ -935,7 +937,7 @@ type aggregateResult struct {
 	detail             string
 	mapsJSON           string
 	socketsCollected   *uint64
-	socketRingCapacity *uint64
+	socketRingSlots    *uint64
 }
 
 type aggregateState struct {
@@ -1044,8 +1046,8 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	if result.socketsCollected != nil {
 		_, _ = fmt.Fprintf(out, ",\n      \"sockets_collected\": %d", *result.socketsCollected)
 	}
-	if result.socketRingCapacity != nil {
-		_, _ = fmt.Fprintf(out, ",\n      \"socket_ring_capacity\": %d", *result.socketRingCapacity)
+	if result.socketRingSlots != nil {
+		_, _ = fmt.Fprintf(out, ",\n      \"socket_ring_slots\": %d", *result.socketRingSlots)
 	}
 	if result.mapsJSON != "" {
 		_, _ = fmt.Fprintf(out, ",\n      \"maps\": {\n%s\n      }", result.mapsJSON)
@@ -1192,9 +1194,9 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		collected := uint64(totalSamples)
 		capacity := uint64(ringCapacity)
 		result.socketsCollected = &collected
-		result.socketRingCapacity = &capacity
-		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring usage: %d/%d.",
-			result.detail, collected, capacity)
+		result.socketRingSlots = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring slots used: %d/%d.",
+			result.detail, collected, collected, capacity)
 	}
 	result.mapsJSON = mapsJSON
 	return result, 0
@@ -1271,9 +1273,9 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 		collected := uint64(totalSamples)
 		capacity := uint64(ringCapacity)
 		result.socketsCollected = &collected
-		result.socketRingCapacity = &capacity
-		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring usage: %d/%d.",
-			result.detail, collected, capacity)
+		result.socketRingSlots = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring slots used: %d/%d.",
+			result.detail, collected, collected, capacity)
 	}
 	result.mapsJSON = mapsJSON
 	return result, 0

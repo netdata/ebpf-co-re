@@ -41,6 +41,7 @@ static void ebpf_disable_probes(struct process_bpf *obj)
     bpf_program__set_autoload(obj->progs.netdata_release_task_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_do_fork_probe, false);
     bpf_program__set_autoload(obj->progs.netdata_kernel_clone_probe, false);
+    bpf_program__set_autoload(obj->progs.netdata_wake_up_new_task_probe, false);
 }
 
 static void ebpf_disable_tracepoints(struct process_bpf *obj)
@@ -116,6 +117,7 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
     } else if (selector == NETDATA_MODE_PROBE) {  // kprobe
         ebpf_disable_tracepoints(obj);
         ebpf_disable_trampoline(obj);
+        bpf_program__set_autoload(obj->progs.netdata_sched_process_fork_btf, false);
 
 #if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(5,9,16))
     bpf_program__set_autoload(obj->progs.netdata_kernel_clone_probe, false);

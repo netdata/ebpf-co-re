@@ -24,3 +24,8 @@ clean:
 	rm -f artifacts/*
 	rm -f includes/*skel.h
 	rm -rf .local_libbpf
+
+check-header-sync:
+	diff -u src/netdata_arena_common.h includes/netdata_arena_common.h
+	diff -u src/netdata_socket_buffer.h kernel-collector/includes/netdata_socket_buffer.h
+	diff -u src/netdata_socket_arena.h kernel-collector/includes/netdata_socket_arena.h

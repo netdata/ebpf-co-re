@@ -1,6 +1,15 @@
+#ifndef KERNEL_VERSION
+#define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
+#endif
+
+#if MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,19,0)
+#include "vmlinux_519.h"
+#else
 #include "vmlinux_508.h"
+#endif
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
+#include "bpf_core_read.h"
 
 #include "netdata_core.h"
 #include "netdata_disk.h"
@@ -20,10 +29,15 @@ struct {
 } tbl_disk_iocall SEC(".maps");
 
 // Correlate issue and completion by request identity, not device/sector.
+struct netdata_disk_inflight_value {
+    __u64 timestamp;
+    dev_t dev;
+};
+
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __type(key, __u64);
-    __type(value, netdata_disk_inflight_t);
+    __type(value, struct netdata_disk_inflight_value);
     __uint(max_entries, 8192);
 } tmp_disk_tp_stat SEC(".maps");
 
@@ -43,32 +57,31 @@ struct {
 
 static __always_inline int netdata_disk_request_key(struct request *rq, netdata_disk_key_t *key)
 {
-    struct gendisk *disk = NULL;
     struct block_device *part = NULL;
 
     if (!rq)
         return 0;
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0))
-    bpf_probe_read(&disk, sizeof(disk), &rq->rq_disk);
-#else
-    struct request_queue *queue = NULL;
-    bpf_probe_read(&queue, sizeof(queue), &rq->q);
-    if (!queue)
-        return 0;
-    bpf_probe_read(&disk, sizeof(disk), &queue->disk);
-#endif
-    if (!disk)
-        return 0;
-    bpf_probe_read(&part, sizeof(part), &disk->part0);
+#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,19,0))
+    BPF_CORE_READ_INTO(&part, rq, part);
     if (!part)
         return 0;
+    BPF_CORE_READ_INTO(&key->dev, part, bd_dev);
+#else
+    struct gendisk *disk = NULL;
+    __u32 major = 0;
+    __u32 first_minor = 0;
 
-    key->dev = 0;
+    BPF_CORE_READ_INTO(&disk, rq, rq_disk);
+    if (!disk)
+        return 0;
+    BPF_CORE_READ_INTO(&major, disk, major);
+    BPF_CORE_READ_INTO(&first_minor, disk, first_minor);
+    key->dev = ((__u64)major << 20) | first_minor;
+#endif
     key->pad = 0;
     key->sector = 0;
-    bpf_probe_read(&key->dev, sizeof(key->dev), &part->bd_dev);
-    bpf_probe_read(&key->sector, sizeof(key->sector), &rq->__sector);
+    BPF_CORE_READ_INTO(&key->sector, rq, __sector);
     if (!key->dev)
         return 0;
     if ((s64)key->sector < 0)
@@ -92,9 +105,9 @@ int netdata_block_rq_issue(struct pt_regs *ctx)
         return 0;
 
     __u64 request_key = (__u64)rq;
-    netdata_disk_inflight_t value = {
+    struct netdata_disk_inflight_value value = {
         .timestamp = bpf_ktime_get_ns(),
-        .key = disk_key,
+        .dev = disk_key.dev,
     };
     if (bpf_map_update_elem(&tmp_disk_tp_stat, &request_key, &value, BPF_ANY))
         return 0;
@@ -104,11 +117,10 @@ int netdata_block_rq_issue(struct pt_regs *ctx)
     return 0;
 }
 
-static __always_inline int netdata_block_rq_complete_impl(struct pt_regs *ctx)
+static __always_inline int netdata_block_rq_complete_impl(struct request *rq)
 {
-    struct request *rq = (struct request *)PT_REGS_PARM1(ctx);
     __u64 request_key = (__u64)rq;
-    netdata_disk_inflight_t *fill = bpf_map_lookup_elem(&tmp_disk_tp_stat, &request_key);
+    struct netdata_disk_inflight_value *fill = bpf_map_lookup_elem(&tmp_disk_tp_stat, &request_key);
     if (!fill)
         return 0;
 
@@ -117,7 +129,7 @@ static __always_inline int netdata_block_rq_complete_impl(struct pt_regs *ctx)
 
     block_key_t blk = {
         .bin = libnetdata_select_idx(curr, NETDATA_FS_MAX_BINS_POS),
-        .dev = netdata_new_encode_dev(fill->key.dev)
+        .dev = netdata_new_encode_dev(fill->dev)
     };
 
     // Update IOPS
@@ -135,18 +147,24 @@ static __always_inline int netdata_block_rq_complete_impl(struct pt_regs *ctx)
     return 0;
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0))
+#if (MY_LINUX_VERSION_CODE < KERNEL_VERSION(5,19,0))
 SEC("kprobe/blk_complete_request")
 int netdata_blk_complete_request(struct pt_regs *ctx)
 {
-    return netdata_block_rq_complete_impl(ctx);
+    return netdata_block_rq_complete_impl((struct request *)PT_REGS_PARM1(ctx));
+}
+#else
+SEC("fentry/blk_complete_request")
+int BPF_PROG(netdata_blk_complete_request, struct request *rq)
+{
+    return netdata_block_rq_complete_impl(rq);
 }
 #endif
 
 SEC("kprobe/blk_mq_end_request")
 int netdata_block_rq_complete(struct pt_regs *ctx)
 {
-    return netdata_block_rq_complete_impl(ctx);
+    return netdata_block_rq_complete_impl((struct request *)PT_REGS_PARM1(ctx));
 }
 
 char _license[] SEC("license") = "GPL";

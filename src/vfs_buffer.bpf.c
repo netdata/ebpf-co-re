@@ -59,6 +59,11 @@ static __always_inline void netdata_vfs_fill_event(struct netdata_vfs_event_t NE
     ev->pad[0] = ev->pad[1] = 0;
 }
 
+static __always_inline __u64 netdata_vfs_nonnegative_bytes(ssize_t bytes)
+{
+    return bytes > 0 ? (__u64)bytes : 0;
+}
+
 /************************************************************************************
  *
  *                                   Probes Section
@@ -85,7 +90,8 @@ int netdata_sys_write_buffer(struct pt_regs *ctx)
     if (err)
         libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_WRITE, 1);
 #endif
-    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_WRITE, libnetdata_log2l(bytes));
+    __u64 count = netdata_vfs_nonnegative_bytes(bytes);
+    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_WRITE, libnetdata_log2l(count));
 
     if (!monitor_apps(&vfs_ctrl))
         return 0;
@@ -95,7 +101,7 @@ int netdata_sys_write_buffer(struct pt_regs *ctx)
         return 0;
 
     netdata_vfs_fill_event(ev, &vfs_ctrl);
-    ev->bytes  = (__u64)bytes;
+    ev->bytes  = count;
     ev->action = NETDATA_VFS_EVENT_WRITE;
     ev->error  = err;
 
@@ -123,7 +129,8 @@ int netdata_sys_writev_buffer(struct pt_regs *ctx)
     if (err)
         libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_WRITEV, 1);
 #endif
-    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_WRITEV, libnetdata_log2l(bytes));
+    __u64 count = netdata_vfs_nonnegative_bytes(bytes);
+    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_WRITEV, libnetdata_log2l(count));
 
     if (!monitor_apps(&vfs_ctrl))
         return 0;
@@ -133,7 +140,7 @@ int netdata_sys_writev_buffer(struct pt_regs *ctx)
         return 0;
 
     netdata_vfs_fill_event(ev, &vfs_ctrl);
-    ev->bytes  = (__u64)bytes;
+    ev->bytes  = count;
     ev->action = NETDATA_VFS_EVENT_WRITEV;
     ev->error  = err;
 
@@ -161,7 +168,8 @@ int netdata_sys_read_buffer(struct pt_regs *ctx)
     if (err)
         libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_READ, 1);
 #endif
-    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_READ, libnetdata_log2l(bytes));
+    __u64 count = netdata_vfs_nonnegative_bytes(bytes);
+    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_READ, libnetdata_log2l(count));
 
     if (!monitor_apps(&vfs_ctrl))
         return 0;
@@ -171,7 +179,7 @@ int netdata_sys_read_buffer(struct pt_regs *ctx)
         return 0;
 
     netdata_vfs_fill_event(ev, &vfs_ctrl);
-    ev->bytes  = (__u64)bytes;
+    ev->bytes  = count;
     ev->action = NETDATA_VFS_EVENT_READ;
     ev->error  = err;
 
@@ -199,7 +207,8 @@ int netdata_sys_readv_buffer(struct pt_regs *ctx)
     if (err)
         libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_ERROR_VFS_READV, 1);
 #endif
-    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_READV, libnetdata_log2l(bytes));
+    __u64 count = netdata_vfs_nonnegative_bytes(bytes);
+    libnetdata_update_global(&tbl_vfs_stats, NETDATA_KEY_BYTES_VFS_READV, libnetdata_log2l(count));
 
     if (!monitor_apps(&vfs_ctrl))
         return 0;
@@ -209,7 +218,7 @@ int netdata_sys_readv_buffer(struct pt_regs *ctx)
         return 0;
 
     netdata_vfs_fill_event(ev, &vfs_ctrl);
-    ev->bytes  = (__u64)bytes;
+    ev->bytes  = count;
     ev->action = NETDATA_VFS_EVENT_READV;
     ev->error  = err;
 
