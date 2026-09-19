@@ -927,17 +927,17 @@ type aggregateTestCase struct {
 }
 
 type aggregateResult struct {
-	name               string
-	binary             string
-	mode               string
-	pid                int
-	status             string
-	exitCode           int
-	command            string
-	detail             string
-	mapsJSON           string
-	socketsCollected   *uint64
-	socketRingSlots    *uint64
+	name             string
+	binary           string
+	mode             string
+	pid              int
+	status           string
+	exitCode         int
+	command          string
+	detail           string
+	mapsJSON         string
+	socketsCollected *uint64
+	socketRingSlots  *uint64
 }
 
 type aggregateState struct {
@@ -1301,6 +1301,7 @@ func printHelp(out io.Writer, name string) {
 			"  --sync --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"+
 			"\n"+
 			"Notes:\n"+
+			"  - --buffer and --arena may be combined; buffers run before arenas.\n"+
 			"  - --all excludes filesystem coverage: nfs, ext4, btrfs, xfs, and zfs.\n"+
 			"  - --filesystem expands to --nfs --ext4 --btrfs --xfs.\n"+
 			"  - zfs is reported as unavailable because this repository does not generate\n"+
@@ -1420,9 +1421,6 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			state.selectionMask |= selectAllNonFilesystem
 			state.explicitSelection = true
 		case "arena":
-			if state.bufferMode {
-				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
-			}
 			state.arenaMode = true
 		case "cachestat":
 			state.selectionMask |= selectCachestat
@@ -1494,9 +1492,6 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			state.selectionMask |= selectZFS
 			state.explicitSelection = true
 		case "buffer":
-			if state.arenaMode {
-				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
-			}
 			state.bufferMode = true
 		default:
 			return state, logPath, false, fmt.Errorf("unrecognized option '--%s'", option)
@@ -1542,93 +1537,110 @@ func main() {
 	failures := 0
 	unavailable := 0
 
-	for _, test := range aggregateTests {
-		if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
-			continue
-		}
+	phaseCount := 0
+	if state.bufferMode {
+		phaseCount++
+	}
+	if state.arenaMode {
+		phaseCount++
+	}
+	if phaseCount == 0 {
+		phaseCount = 1
+	}
 
-		if state.bufferMode {
-			if !test.bufferSupported {
+	// Combined mode deliberately has two complete passes: buffers, then arenas.
+	for phase := 0; phase < phaseCount; phase++ {
+		runBuffer := state.bufferMode && phase == 0
+		runArena := state.arenaMode && (!state.bufferMode || phase == 1)
+
+		for _, test := range aggregateTests {
+			if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
 				continue
 			}
 
-			result, exitCode := executeBufferTest(state, test)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		if state.arenaMode {
-			if !test.arenaSupported {
-				continue
-			}
-
-			result, exitCode := executeArenaTest(state, test)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		if test.unavailableReason != "" {
-			result := recordUnavailable(test, test.unavailableReason)
-			writeResult(report, result, &first)
-			resultCount++
-			unavailable++
-			continue
-		}
-
-		if test.modes == modeNone {
-			result, exitCode := executeTest(state, test, modeNone, -1)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		orderedModes := []uint{modeProbe, modeTracepoint, modeTrampoline}
-		for _, mode := range orderedModes {
-			if test.modes&mode == 0 {
-				continue
-			}
-
-			pidStart := -1
-			pidEnd := -1
-			if test.pidSupported {
-				if state.selectedPID >= 0 {
-					pidStart = state.selectedPID
-					pidEnd = state.selectedPID
-				} else {
-					pidStart = pidMin
-					pidEnd = pidMax
+			if runBuffer {
+				if !test.bufferSupported {
+					continue
 				}
+
+				result, exitCode := executeBufferTest(state, test)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
 			}
 
-			if pidStart >= 0 {
-				for pid := pidStart; pid <= pidEnd; pid++ {
-					result, exitCode := executeTest(state, test, mode, pid)
-					if exitCode != 0 {
-						failures++
+			if runArena {
+				if !test.arenaSupported {
+					continue
+				}
+
+				result, exitCode := executeArenaTest(state, test)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
+			}
+
+			if test.unavailableReason != "" {
+				result := recordUnavailable(test, test.unavailableReason)
+				writeResult(report, result, &first)
+				resultCount++
+				unavailable++
+				continue
+			}
+
+			if test.modes == modeNone {
+				result, exitCode := executeTest(state, test, modeNone, -1)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
+			}
+
+			orderedModes := []uint{modeProbe, modeTracepoint, modeTrampoline}
+			for _, mode := range orderedModes {
+				if test.modes&mode == 0 {
+					continue
+				}
+
+				pidStart := -1
+				pidEnd := -1
+				if test.pidSupported {
+					if state.selectedPID >= 0 {
+						pidStart = state.selectedPID
+						pidEnd = state.selectedPID
+					} else {
+						pidStart = pidMin
+						pidEnd = pidMax
 					}
-					writeResult(report, result, &first)
-					resultCount++
 				}
-				continue
-			}
 
-			result, exitCode := executeTest(state, test, mode, -1)
-			if exitCode != 0 {
-				failures++
+				if pidStart >= 0 {
+					for pid := pidStart; pid <= pidEnd; pid++ {
+						result, exitCode := executeTest(state, test, mode, pid)
+						if exitCode != 0 {
+							failures++
+						}
+						writeResult(report, result, &first)
+						resultCount++
+					}
+					continue
+				}
+
+				result, exitCode := executeTest(state, test, mode, -1)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
 			}
-			writeResult(report, result, &first)
-			resultCount++
 		}
 	}
 

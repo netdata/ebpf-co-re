@@ -1154,6 +1154,7 @@ static void print_help(const char *name)
             "  --sync --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"
             "\n"
             "Notes:\n"
+            "  - --buffer and --arena may be combined; buffers run before arenas.\n"
             "  - --all excludes filesystem coverage: nfs, ext4, btrfs, xfs, and zfs.\n"
             "  - --filesystem expands to --nfs --ext4 --btrfs --xfs.\n"
             "  - zfs is reported as unavailable because this repository does not generate\n"
@@ -1246,10 +1247,6 @@ int main(int argc, char **argv)
                 state.explicit_selection = 1;
                 break;
             case OPT_ARENA:
-                if (state.buffer_mode) {
-                    fprintf(stderr, "--buffer and --arena are mutually exclusive.\n");
-                    return 1;
-                }
                 state.arena_mode = 1;
                 break;
             case OPT_CACHESTAT:
@@ -1345,10 +1342,6 @@ int main(int argc, char **argv)
                 state.explicit_selection = 1;
                 break;
             case OPT_BUFFER:
-                if (state.arena_mode) {
-                    fprintf(stderr, "--buffer and --arena are mutually exclusive.\n");
-                    return 1;
-                }
                 state.buffer_mode = 1;
                 break;
             default:
@@ -1371,13 +1364,25 @@ int main(int argc, char **argv)
 
     fprintf(report, "{\n  \"runs\": [\n");
 
-    for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
+    /* Combined mode deliberately has two complete passes: buffers, then arenas. */
+    {
+        int phase_count = state.buffer_mode + state.arena_mode;
+        int phase;
+
+        if (!phase_count)
+            phase_count = 1;
+
+        for (phase = 0; phase < phase_count; phase++) {
+            int run_buffer = state.buffer_mode && phase == 0;
+            int run_arena = state.arena_mode && (!state.buffer_mode || phase == 1);
+
+            for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
         const aggregate_test_case_t *test = &aggregate_tests[i];
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;
 
-        if (state.buffer_mode) {
+        if (run_buffer) {
             if (!test->buffer_supported)
                 continue;
 
@@ -1393,7 +1398,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (state.arena_mode) {
+        if (run_arena) {
             if (!test->arena_supported)
                 continue;
 
@@ -1477,6 +1482,8 @@ int main(int argc, char **argv)
                     write_result(report, &results[result_count], &first);
                     result_count++;
                 }
+            }
+        }
             }
         }
     }
