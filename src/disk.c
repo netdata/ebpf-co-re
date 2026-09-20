@@ -7,12 +7,25 @@
 #define __USE_GNU
 #include <fcntl.h>
 #include <unistd.h>
+#include <bpf/btf.h>
 
 #include "netdata_defs.h"
 #include "netdata_core_common.h"
 #include "netdata_tests.h"
 
 #include "disk.skel.h"
+
+static void disk_disable_unavailable_programs(struct disk_bpf *obj)
+{
+    struct btf *kernel_btf = btf__load_vmlinux_btf();
+    int complete_id = kernel_btf ?
+        btf__find_by_name_kind(kernel_btf, "blk_complete_request", BTF_KIND_FUNC) : -1;
+
+    if (complete_id < 0)
+        bpf_program__set_autoload(obj->progs.netdata_blk_complete_request, false);
+
+    btf__free(kernel_btf);
+}
 
 // Copied and redefined from ../include/netdata_disk.h
 typedef struct block_key {
@@ -22,6 +35,8 @@ typedef struct block_key {
 
 static inline int ebpf_load_and_attach(struct disk_bpf *obj)
 {
+    disk_disable_unavailable_programs(obj);
+
     int ret = disk_bpf__load(obj);
     if (ret) {
         fprintf(stderr, "failed to load BPF object: %d\n", ret);
@@ -133,4 +148,3 @@ int main(int argc, char **argv)
 
     return ebpf_disk_tests();
 }
-
