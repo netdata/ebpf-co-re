@@ -4,6 +4,8 @@ CFLAGS = -Wall -ggdb
 INCLUDES = -I../.local_libbpf/ -I../includes/ -I$(LIBBPF)/src/ -I. -I../kernel-collector/includes/ -I$(LIBBPF)/include/uapi/
 CLANG ?= clang 
 LLVM_STRIP ?= llvm-strip
+BPFTOOL ?= bpftool
+BPFTOOL_WRAPPER ?= ../tools/bpftool-wrapper.sh
 OUTPUT = tests/
 ARCH := $(shell uname -m | sed 's/x86_64/x86/')
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 \
@@ -73,9 +75,12 @@ ARENA_APPS = cachestat_arena \
              vfs_arena \
              #
 ARENA_SKELS = $(patsubst %,%.skel.h,$(ARENA_APPS))
+# Arena slot reservation uses atomic fetch-add, which requires BPF ISA v3.
+BPF_CPU = -mcpu=v3
 else
 ARENA_APPS =
 ARENA_SKELS =
+BPF_CPU =
 endif
 
 AGGREGATE_TESTER = core_tester
@@ -95,11 +100,11 @@ $(LIBBPF_ARTIFACT):
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf $(BPF_CPU) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o
-	bpftool gen skeleton $< > ../includes/$@
+	$(BPFTOOL_WRAPPER) $(BPFTOOL) gen skeleton $< > ../includes/$@
 
 $(patsubst %,%.o,$(APPS)): %.o: %.skel.h
 
