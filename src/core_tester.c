@@ -32,8 +32,8 @@
 #include "vfs_buffer.skel.h"
 #endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
-/* BPF_MAP_TYPE_ARENA requires kernel >= 6.9 (version code 395520). */
-#if MY_LINUX_VERSION_CODE >= 395520
+/* Arena programs require verifier behavior available from kernel >= 6.13. */
+#if MY_LINUX_VERSION_CODE >= 396544
 #include "netdata_cachestat_arena.h"
 #include "netdata_dc_arena.h"
 #include "netdata_dns_arena.h"
@@ -55,10 +55,10 @@
 #include "shm_arena.skel.h"
 #include "swap_arena.skel.h"
 #include "vfs_arena.skel.h"
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 /* cgo and some compilers are more conservative about inline skeleton helpers. */
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 #define DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(prefix) \
     struct prefix##_bpf; \
     static struct prefix##_bpf *prefix##_bpf__open(void); \
@@ -75,7 +75,7 @@ DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(shm_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(swap_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(vfs_arena);
 #undef DECLARE_NETDATA_CORE_ARENA_SKEL_OPS
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -245,7 +245,7 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
 };
 #endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 DEFINE_BUFFER_SKEL_OPS(cachestat_arena)
 DEFINE_BUFFER_SKEL_OPS(dc_arena)
 DEFINE_BUFFER_SKEL_OPS(dns_arena)
@@ -281,7 +281,7 @@ static const buffer_skel_ops_t *find_arena_skel_ops(const char *name)
 
     return NULL;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
@@ -700,7 +700,7 @@ static int test_ringbuf_map(struct bpf_map *map, int iterations,
     return op_error;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int test_arena_map(struct bpf_map *map, int iterations,
                           char *map_json_buf, size_t map_json_size)
 {
@@ -769,7 +769,7 @@ static int test_arena_map(struct bpf_map *map, int iterations,
 
     return setup_error;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 static int netdata_core_symbol_in_kallsyms(const char *name)
 {
@@ -912,7 +912,7 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
         int n;
 
         (*maps)++;
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
         if (!tracked)
             tracked = (map_type == BPF_MAP_TYPE_ARENA);
 #endif
@@ -933,7 +933,7 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
             (*ringbuf_maps)++;
 
         map_json_buf[0] = '\0';
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
         if (map_type == BPF_MAP_TYPE_ARENA)
             err = test_arena_map(map, iterations,
                                  map_json_buf, sizeof(map_json_buf));
@@ -1055,11 +1055,11 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
     if (!netdata_core_arena_supported()) {
         snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
         snprintf(result->detail, sizeof(result->detail), "%s",
-                 "Arena collection requires kernel >= 6.9.");
+                 "Arena collection requires kernel >= 6.13 for verifier compatibility.");
         return 0;
     }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
     {
         const buffer_skel_ops_t *ops;
         buffer_skel_base_t *base;
@@ -1126,7 +1126,7 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
 
 static int netdata_core_arena_supported(void)
 {
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
     return 1;
 #else
     return 0;
@@ -1406,7 +1406,7 @@ int main(int argc, char **argv)
             failures += execute_arena_test(&state, test, &results[result_count]) != 0;
 #else
             record_unavailable(&results[result_count], test,
-                               "Arena (BPF_MAP_TYPE_ARENA) requires kernel >= 6.9.");
+                               "Arena (BPF_MAP_TYPE_ARENA) requires kernel >= 6.13 for verifier compatibility.");
             unavailable++;
 #endif
             write_result(report, &results[result_count], &first);

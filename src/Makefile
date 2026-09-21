@@ -61,8 +61,9 @@ else
 RINGBUF_SKELS =
 endif
 
-# BPF_MAP_TYPE_ARENA requires kernel >= 6.9.
-ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 395520 ; echo $$?),0)
+# Arena programs require the verifier behavior available from kernel 6.13.
+# Kernel 6.12 accepts the map type but rejects the generated arena event pointers.
+ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 396544 ; echo $$?),0)
 ARENA_APPS = cachestat_arena \
              dc_arena \
              dns_arena \

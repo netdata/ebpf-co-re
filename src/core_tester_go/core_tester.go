@@ -113,8 +113,8 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 	return NULL;
 }
 
-// BPF_MAP_TYPE_ARENA requires kernel >= 6.9 (version code 395520).
-#if MY_LINUX_VERSION_CODE >= 395520
+// Arena programs require verifier behavior available from kernel >= 6.13.
+#if MY_LINUX_VERSION_CODE >= 396544
 #include "netdata_cachestat_arena.h"
 #include "netdata_dc_arena.h"
 #include "netdata_dns_arena.h"
@@ -190,7 +190,7 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_arena_skel_o
 
 	return NULL;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
@@ -365,7 +365,7 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	return op_err;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 				       char *map_json_buf, int map_json_size, size_t *total_samples,
 				       size_t *ring_capacity)
@@ -448,7 +448,7 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 
 	return setup_err;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 // Check whether a kernel symbol is present in /proc/kallsyms.
 static int netdata_core_symbol_in_kallsyms(const char *name)
@@ -655,7 +655,7 @@ out:
 	return err;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 					    int *attached, int *skipped, int *maps, int *ring_maps,
 					    char *maps_json_buf, int maps_json_size, size_t *total_samples,
@@ -794,7 +794,7 @@ out:
 
 	return err;
 }
-#else // MY_LINUX_VERSION_CODE < 395520 (but >= 329728): arena not supported
+#else // MY_LINUX_VERSION_CODE < 396544 (but >= 329728): arena not supported
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
 	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
@@ -806,11 +806,11 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 static int netdata_core_arena_supported(void)
 {
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 	return 1;
 #else
 	return 0;
@@ -1219,7 +1219,7 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 
 	if C.netdata_core_arena_supported() == 0 {
 		result.status = "Unavailable"
-		result.detail = "Arena collection requires kernel >= 6.9."
+		result.detail = "Arena collection requires kernel >= 6.13 for verifier compatibility."
 		return result, 0
 	}
 
