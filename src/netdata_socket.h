@@ -73,6 +73,19 @@ typedef struct netdata_passive_connection_idx {
     __u16 port;
 } netdata_passive_connection_idx_t;
 
+enum netdata_socket_call_type {
+    NETDATA_SOCKET_CALL_TCP_V4_CONNECT,
+    NETDATA_SOCKET_CALL_TCP_V6_CONNECT,
+    NETDATA_SOCKET_CALL_TCP_SENDMSG,
+    NETDATA_SOCKET_CALL_UDP_SENDMSG,
+};
+
+struct netdata_socket_call_key {
+    __u64 pid_tgid;
+    __u32 call_type;
+    __u32 pad;                 // Verifier-visible padding must be initialized.
+};
+
 enum socket_counters {
     NETDATA_KEY_CALLS_TCP_SENDMSG,
     NETDATA_KEY_ERROR_TCP_SENDMSG,

@@ -49,8 +49,8 @@ struct netdata_socket_call_context {
     struct inet_sock *is;
 };
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, __u64);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __type(key, struct netdata_socket_call_key);
     __type(value, struct netdata_socket_call_context);
     __uint(max_entries, 4096);
 } tbl_socket_calls SEC(".maps");
@@ -151,12 +151,14 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
             libnetdata_update_u32(&ptr->tcp.call_tcp_sent, 1);
             libnetdata_update_u64(&ptr->tcp.tcp_bytes_sent, sent);
 
-            libnetdata_update_u32(&ptr->tcp.retransmit, retransmitted);
         } else {
             libnetdata_update_u32(&ptr->udp.call_udp_sent, 1);
             libnetdata_update_u64(&ptr->udp.udp_bytes_sent, sent);
         }
     }
+
+    if (protocol == IPPROTO_TCP)
+        libnetdata_update_u32(&ptr->tcp.retransmit, retransmitted);
 
     if (received) {
         if (protocol == IPPROTO_TCP) {
@@ -440,7 +442,10 @@ SEC("kprobe/tcp_v4_connect")
 int BPF_KRETPROBE(netdata_tcp_v4_connect_kprobe)
 {
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_V4_CONNECT,
+    };
     struct netdata_socket_call_context value = { .is = is };
     bpf_map_update_elem(&tbl_socket_calls, &key, &value, BPF_ANY);
     return 0;
@@ -451,7 +456,10 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_V4_CONNECT,
+    };
     struct netdata_socket_call_context *value = bpf_map_lookup_elem(&tbl_socket_calls, &key);
     struct inet_sock *is = value ? value->is : NULL;
     bpf_map_delete_elem(&tbl_socket_calls, &key);
@@ -463,7 +471,10 @@ SEC("kprobe/tcp_v6_connect")
 int BPF_KRETPROBE(netdata_tcp_v6_connect_kprobe)
 {
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_V6_CONNECT,
+    };
     struct netdata_socket_call_context value = { .is = is };
     bpf_map_update_elem(&tbl_socket_calls, &key, &value, BPF_ANY);
     return 0;
@@ -474,7 +485,10 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
 
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_V6_CONNECT,
+    };
     struct netdata_socket_call_context *value = bpf_map_lookup_elem(&tbl_socket_calls, &key);
     struct inet_sock *is = value ? value->is : NULL;
     bpf_map_delete_elem(&tbl_socket_calls, &key);
@@ -547,7 +561,10 @@ int BPF_KRETPROBE(netdata_tcp_sendmsg_kretprobe)
     int ret = (int)PT_REGS_RC(ctx);
     size_t sent = (ret > 0 )?(size_t) ret : 0;
 
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_SENDMSG,
+    };
     struct netdata_socket_call_context *value = bpf_map_lookup_elem(&tbl_socket_calls, &key);
     struct inet_sock *is = value ? value->is : NULL;
     bpf_map_delete_elem(&tbl_socket_calls, &key);
@@ -560,7 +577,10 @@ int BPF_KPROBE(netdata_tcp_sendmsg_kprobe)
     size_t sent = (size_t) PT_REGS_PARM3(ctx);
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_TCP_SENDMSG,
+    };
     struct netdata_socket_call_context value = { .is = is };
     (void)sent;
     bpf_map_update_elem(&tbl_socket_calls, &key, &value, BPF_ANY);
@@ -573,7 +593,10 @@ int BPF_KRETPROBE(netdata_udp_sendmsg_kretprobe)
 {
     int ret = (int)PT_REGS_RC(ctx);
     size_t sent = (ret > 0 )?(size_t)ret : 0;
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_UDP_SENDMSG,
+    };
     struct netdata_socket_call_context *value = bpf_map_lookup_elem(&tbl_socket_calls, &key);
     struct inet_sock *is = value ? value->is : NULL;
     bpf_map_delete_elem(&tbl_socket_calls, &key);
@@ -586,7 +609,10 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
     size_t sent = (size_t)PT_REGS_PARM3(ctx);
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
 
-    __u64 key = bpf_get_current_pid_tgid();
+    struct netdata_socket_call_key key = {
+        .pid_tgid = bpf_get_current_pid_tgid(),
+        .call_type = NETDATA_SOCKET_CALL_UDP_SENDMSG,
+    };
     struct netdata_socket_call_context value = { .is = is };
     (void)sent;
     bpf_map_update_elem(&tbl_socket_calls, &key, &value, BPF_ANY);
@@ -608,13 +634,6 @@ int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
     return netdata_common_inet_csk_accept(sk);
 }
 
-SEC("fentry/tcp_v4_connect")
-int BPF_PROG(netdata_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
-{
-    (void)sk; (void)uaddr; (void)addr_len; (void)ret;
-    return 0;
-}
-
 SEC("fexit/tcp_v4_connect")
 int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
 {
@@ -624,13 +643,6 @@ int BPF_PROG(netdata_tcp_v4_connect_fexit, struct sock *sk, struct sockaddr *uad
     struct inet_sock *is = (struct inet_sock *)sk;
     return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
-}
-
-SEC("fentry/tcp_v6_connect")
-int BPF_PROG(netdata_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr *uaddr, int addr_len, int ret)
-{
-    (void)sk; (void)uaddr; (void)addr_len; (void)ret;
-    return 0;
 }
 
 SEC("fexit/tcp_v6_connect")
@@ -709,13 +721,6 @@ int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, int
     return netdata_common_udp_recvmsg_return(sk, ret > 0 ? (__u64)ret : 0);
 }
 
-SEC("fentry/tcp_sendmsg")
-int BPF_PROG(netdata_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t size)
-{
-    (void)sk; (void)msg; (void)size;
-    return 0;
-}
-
 SEC("fexit/tcp_sendmsg")
 int BPF_PROG(netdata_tcp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, size_t size, int ret)
 {
@@ -726,13 +731,6 @@ int BPF_PROG(netdata_tcp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
 
     struct inet_sock *is = (struct inet_sock *)sk;
     return common_tcp_send_message(is, sent, ret);
-}
-
-SEC("fentry/udp_sendmsg")
-int BPF_PROG(netdata_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg, size_t len)
-{
-    (void)sk; (void)msg; (void)len;
-    return 0;
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L965

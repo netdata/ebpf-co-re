@@ -67,12 +67,8 @@ static __always_inline int netdata_disk_request_key(struct request *rq, netdata_
         return 0;
     BPF_CORE_READ_INTO(&key->dev, part, bd_dev);
     key->pad = 0;
-    key->sector = 0;
-    BPF_CORE_READ_INTO(&key->sector, rq, __sector);
     if (!key->dev)
         return 0;
-    if ((s64)key->sector < 0)
-        key->sector = 0;
 
     return 1;
 }
