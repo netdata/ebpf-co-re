@@ -32,12 +32,10 @@ if [ "$LIBC" = "static" ]; then
   export STATIC
 fi
 
-git clean -d -f -x
-
 docker build \
   -f Dockerfile."${LIBC}"."${OS}" \
   -t "${TAG}" \
-  --build-arg KERNEL_VERSION="${KERNEL_VERSION}" \
+  --build-arg LOCAL_KERNEL_VERSION="${KERNEL_VERSION}" \
   ./ | tee prepare.log
 
 if [ -t 1 ]; then

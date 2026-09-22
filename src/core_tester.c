@@ -24,6 +24,7 @@
 #include "dc_buffer.skel.h"
 #include "dns_buffer.skel.h"
 #include "fd_buffer.skel.h"
+#include "socket_buffer.skel.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
 #include "shm_buffer.skel.h"
@@ -31,12 +32,13 @@
 #include "vfs_buffer.skel.h"
 #endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
-/* BPF_MAP_TYPE_ARENA requires kernel >= 6.9 (version code 395520). */
-#if MY_LINUX_VERSION_CODE >= 395520
+/* Arena programs require verifier behavior available from kernel >= 6.13. */
+#if MY_LINUX_VERSION_CODE >= 396544
 #include "netdata_cachestat_arena.h"
 #include "netdata_dc_arena.h"
 #include "netdata_dns_arena.h"
 #include "netdata_fd_arena.h"
+#include "netdata_socket_arena.h"
 #include "netdata_oomkill_arena.h"
 #include "netdata_process_arena.h"
 #include "netdata_shm_arena.h"
@@ -47,15 +49,16 @@
 #include "dc_arena.skel.h"
 #include "dns_arena.skel.h"
 #include "fd_arena.skel.h"
+#include "socket_arena.skel.h"
 #include "oomkill_arena.skel.h"
 #include "process_arena.skel.h"
 #include "shm_arena.skel.h"
 #include "swap_arena.skel.h"
 #include "vfs_arena.skel.h"
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 /* cgo and some compilers are more conservative about inline skeleton helpers. */
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 #define DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(prefix) \
     struct prefix##_bpf; \
     static struct prefix##_bpf *prefix##_bpf__open(void); \
@@ -72,7 +75,7 @@ DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(shm_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(swap_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(vfs_arena);
 #undef DECLARE_NETDATA_CORE_ARENA_SKEL_OPS
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 #define MODE_NONE        0U
 #define MODE_PROBE       (1U << 0)
@@ -221,6 +224,7 @@ DEFINE_BUFFER_SKEL_OPS(cachestat_buffer)
 DEFINE_BUFFER_SKEL_OPS(dc_buffer)
 DEFINE_BUFFER_SKEL_OPS(dns_buffer)
 DEFINE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_BUFFER_SKEL_OPS(socket_buffer)
 DEFINE_BUFFER_SKEL_OPS(oomkill_buffer)
 DEFINE_BUFFER_SKEL_OPS(process_buffer)
 DEFINE_BUFFER_SKEL_OPS(shm_buffer)
@@ -232,6 +236,7 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
     { "dc", open_dc_buffer, load_dc_buffer, destroy_dc_buffer },
     { "dns", open_dns_buffer, load_dns_buffer, destroy_dns_buffer },
     { "fd", open_fd_buffer, load_fd_buffer, destroy_fd_buffer },
+    { "socket", open_socket_buffer, load_socket_buffer, destroy_socket_buffer },
     { "oomkill", open_oomkill_buffer, load_oomkill_buffer, destroy_oomkill_buffer },
     { "process", open_process_buffer, load_process_buffer, destroy_process_buffer },
     { "shm", open_shm_buffer, load_shm_buffer, destroy_shm_buffer },
@@ -240,11 +245,12 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
 };
 #endif /* MY_LINUX_VERSION_CODE >= 329728 */
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 DEFINE_BUFFER_SKEL_OPS(cachestat_arena)
 DEFINE_BUFFER_SKEL_OPS(dc_arena)
 DEFINE_BUFFER_SKEL_OPS(dns_arena)
 DEFINE_BUFFER_SKEL_OPS(fd_arena)
+DEFINE_BUFFER_SKEL_OPS(socket_arena)
 DEFINE_BUFFER_SKEL_OPS(oomkill_arena)
 DEFINE_BUFFER_SKEL_OPS(process_arena)
 DEFINE_BUFFER_SKEL_OPS(shm_arena)
@@ -256,6 +262,7 @@ static const buffer_skel_ops_t arena_skel_ops[] = {
     { "dc", open_dc_arena, load_dc_arena, destroy_dc_arena },
     { "dns", open_dns_arena, load_dns_arena, destroy_dns_arena },
     { "fd", open_fd_arena, load_fd_arena, destroy_fd_arena },
+    { "socket", open_socket_arena, load_socket_arena, destroy_socket_arena },
     { "oomkill", open_oomkill_arena, load_oomkill_arena, destroy_oomkill_arena },
     { "process", open_process_arena, load_process_arena, destroy_process_arena },
     { "shm", open_shm_arena, load_shm_arena, destroy_shm_arena },
@@ -274,7 +281,7 @@ static const buffer_skel_ops_t *find_arena_skel_ops(const char *name)
 
     return NULL;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 static const aggregate_test_case_t aggregate_tests[] = {
     { "cachestat", "cachestat", netdata_cachestat_entry, NULL, NULL, SELECT_CACHESTAT,
@@ -302,7 +309,7 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "shm", "shm", netdata_shm_entry, NULL, NULL, SELECT_SHM,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "shm_ctrl" },
     { "socket", "socket", netdata_socket_entry, NULL, NULL, SELECT_SOCKET,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "socket_ctrl" },
     { "softirq", "softirq", netdata_softirq_entry, NULL, NULL, SELECT_SOFTIRQ,
       MODE_NONE, 0, 0 },
     { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
@@ -693,7 +700,7 @@ static int test_ringbuf_map(struct bpf_map *map, int iterations,
     return op_error;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int test_arena_map(struct bpf_map *map, int iterations,
                           char *map_json_buf, size_t map_json_size)
 {
@@ -762,7 +769,7 @@ static int test_arena_map(struct bpf_map *map, int iterations,
 
     return setup_error;
 }
-#endif /* MY_LINUX_VERSION_CODE >= 395520 */
+#endif /* MY_LINUX_VERSION_CODE >= 396544 */
 
 static int netdata_core_symbol_in_kallsyms(const char *name)
 {
@@ -905,7 +912,7 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
         int n;
 
         (*maps)++;
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
         if (!tracked)
             tracked = (map_type == BPF_MAP_TYPE_ARENA);
 #endif
@@ -926,7 +933,7 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
             (*ringbuf_maps)++;
 
         map_json_buf[0] = '\0';
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
         if (map_type == BPF_MAP_TYPE_ARENA)
             err = test_arena_map(map, iterations,
                                  map_json_buf, sizeof(map_json_buf));
@@ -1048,11 +1055,11 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
     if (!netdata_core_arena_supported()) {
         snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
         snprintf(result->detail, sizeof(result->detail), "%s",
-                 "Arena collection requires kernel >= 6.9.");
+                 "Arena collection requires kernel >= 6.13 for verifier compatibility.");
         return 0;
     }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
     {
         const buffer_skel_ops_t *ops;
         buffer_skel_base_t *base;
@@ -1119,7 +1126,7 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
 
 static int netdata_core_arena_supported(void)
 {
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
     return 1;
 #else
     return 0;
@@ -1147,6 +1154,7 @@ static void print_help(const char *name)
             "  --sync --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"
             "\n"
             "Notes:\n"
+            "  - --buffer and --arena may be combined; buffers run before arenas.\n"
             "  - --all excludes filesystem coverage: nfs, ext4, btrfs, xfs, and zfs.\n"
             "  - --filesystem expands to --nfs --ext4 --btrfs --xfs.\n"
             "  - zfs is reported as unavailable because this repository does not generate\n"
@@ -1239,10 +1247,6 @@ int main(int argc, char **argv)
                 state.explicit_selection = 1;
                 break;
             case OPT_ARENA:
-                if (state.buffer_mode) {
-                    fprintf(stderr, "--buffer and --arena are mutually exclusive.\n");
-                    return 1;
-                }
                 state.arena_mode = 1;
                 break;
             case OPT_CACHESTAT:
@@ -1338,10 +1342,6 @@ int main(int argc, char **argv)
                 state.explicit_selection = 1;
                 break;
             case OPT_BUFFER:
-                if (state.arena_mode) {
-                    fprintf(stderr, "--buffer and --arena are mutually exclusive.\n");
-                    return 1;
-                }
                 state.buffer_mode = 1;
                 break;
             default:
@@ -1364,13 +1364,25 @@ int main(int argc, char **argv)
 
     fprintf(report, "{\n  \"runs\": [\n");
 
-    for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
+    /* Combined mode deliberately has two complete passes: buffers, then arenas. */
+    {
+        int phase_count = state.buffer_mode + state.arena_mode;
+        int phase;
+
+        if (!phase_count)
+            phase_count = 1;
+
+        for (phase = 0; phase < phase_count; phase++) {
+            int run_buffer = state.buffer_mode && phase == 0;
+            int run_arena = state.arena_mode && (!state.buffer_mode || phase == 1);
+
+            for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
         const aggregate_test_case_t *test = &aggregate_tests[i];
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;
 
-        if (state.buffer_mode) {
+        if (run_buffer) {
             if (!test->buffer_supported)
                 continue;
 
@@ -1386,7 +1398,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (state.arena_mode) {
+        if (run_arena) {
             if (!test->arena_supported)
                 continue;
 
@@ -1394,7 +1406,7 @@ int main(int argc, char **argv)
             failures += execute_arena_test(&state, test, &results[result_count]) != 0;
 #else
             record_unavailable(&results[result_count], test,
-                               "Arena (BPF_MAP_TYPE_ARENA) requires kernel >= 6.9.");
+                               "Arena (BPF_MAP_TYPE_ARENA) requires kernel >= 6.13 for verifier compatibility.");
             unavailable++;
 #endif
             write_result(report, &results[result_count], &first);
@@ -1470,6 +1482,8 @@ int main(int argc, char **argv)
                     write_result(report, &results[result_count], &first);
                     result_count++;
                 }
+            }
+        }
             }
         }
     }
