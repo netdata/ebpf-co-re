@@ -62,23 +62,10 @@ static __always_inline int netdata_disk_request_key(struct request *rq, netdata_
     if (!rq)
         return 0;
 
-#if (MY_LINUX_VERSION_CODE >= KERNEL_VERSION(5,19,0))
     BPF_CORE_READ_INTO(&part, rq, part);
     if (!part)
         return 0;
     BPF_CORE_READ_INTO(&key->dev, part, bd_dev);
-#else
-    struct gendisk *disk = NULL;
-    __u32 major = 0;
-    __u32 first_minor = 0;
-
-    BPF_CORE_READ_INTO(&disk, rq, rq_disk);
-    if (!disk)
-        return 0;
-    BPF_CORE_READ_INTO(&major, disk, major);
-    BPF_CORE_READ_INTO(&first_minor, disk, first_minor);
-    key->dev = ((__u64)major << 20) | first_minor;
-#endif
     key->pad = 0;
     key->sector = 0;
     BPF_CORE_READ_INTO(&key->sector, rq, __sector);
