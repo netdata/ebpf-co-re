@@ -80,15 +80,15 @@ static inline int ebpf_load_and_attach(struct mdflush_bpf *obj, int selector)
 
 static void ebpf_update_tables(int global)
 {
-    (void)ebpf_fill_global(global);
+    (void)ebpf_core_fill_global(global);
 }
 
 static int ebpf_mdflush_tests(int selector)
 {
     struct mdflush_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = mdflush_bpf__open();
     if (!obj) {

@@ -216,7 +216,7 @@ static int fd_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_pid)
 
 static pid_t ebpf_update_tables(int global, int apps)
 {
-    pid_t pid = ebpf_fill_global(global);
+    pid_t pid = ebpf_core_fill_global(global);
 
     struct netdata_fd_stat_t stats = { .open_call = 1, .close_call = 1,
                                        .open_err = 1, .close_err = 1};
@@ -232,9 +232,9 @@ static pid_t ebpf_update_tables(int global, int apps)
 static int ebpf_fd_tests(int selector, enum netdata_apps_level map_level)
 {
     struct fd_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = fd_bpf__open();
     if (!obj) {

@@ -12,6 +12,28 @@
 #include "netdata_core.h"
 #include "netdata_socket.h"
 
+#ifndef NETDATASEL
+#define NETDATASEL 0
+#endif
+
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+#include "netdata_socket_buffer.h"
+#ifdef NETDATA_ARENA_MODE
+#include "netdata_socket_arena.h"
+#define NETDATA_SOCKET_EVENT_PTR __arena
+#define NETDATA_SOCKET_EVENT_RESERVE() netdata_socket_arena_reserve()
+#define NETDATA_SOCKET_EVENT_SUBMIT(ev) netdata_socket_arena_submit(ev)
+#else
+#define NETDATA_SOCKET_EVENT_PTR
+#define NETDATA_SOCKET_EVENT_RESERVE() bpf_ringbuf_reserve(&socket_events, sizeof(struct netdata_socket_event_t), 0)
+#define NETDATA_SOCKET_EVENT_SUBMIT(ev) bpf_ringbuf_submit(ev, 0)
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, NETDATA_SOCKET_RINGBUF_SIZE);
+} socket_events SEC(".maps");
+#endif
+#endif
+
 // Copied from https://elixir.bootlin.com/linux/v5.15.5/source/include/linux/socket.h#L175
 #define AF_UNSPEC	0
 #define AF_INET		2
@@ -31,12 +53,14 @@ struct {
     __uint(max_entries, NETDATA_SOCKET_COUNTER);
 } tbl_global_sock SEC(".maps");
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE)
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __type(key, netdata_socket_idx_t);
     __type(value, netdata_socket_t);
     __uint(max_entries, PID_MAX_DEFAULT);
 } tbl_nd_socket SEC(".maps");
+#endif
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
@@ -159,6 +183,20 @@ static __always_inline void update_socket_stats(netdata_socket_t *ptr,
     }
 }
 
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+static __always_inline void netdata_socket_emit_event(const netdata_socket_idx_t *idx,
+                                                       const netdata_socket_t *data)
+{
+    struct netdata_socket_event_t NETDATA_SOCKET_EVENT_PTR *ev = NETDATA_SOCKET_EVENT_RESERVE();
+    if (!ev)
+        return;
+
+    ev->idx = *idx;
+    ev->data = *data;
+    NETDATA_SOCKET_EVENT_SUBMIT(ev);
+}
+#endif
+
 // Use __always_inline instead inline to keep compatiblity with old kernels
 // https://docs.cilium.io/en/v1.8/bpf/
 static __always_inline void update_socket_table(struct inet_sock *is,
@@ -174,9 +212,14 @@ static __always_inline void update_socket_table(struct inet_sock *is,
     if (family == AF_UNSPEC)
         return;
 
-    netdata_socket_t *val;
     netdata_socket_t data = { };
 
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+    update_socket_common(&data, protocol, family);
+    update_socket_stats(&data, sent, received, retransmitted, protocol, state);
+    netdata_socket_emit_event(&idx, &data);
+#else
+    netdata_socket_t *val;
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
         update_socket_stats(val, sent, received, retransmitted, protocol, state);
@@ -189,19 +232,29 @@ static __always_inline void update_socket_table(struct inet_sock *is,
 
         bpf_map_update_elem(&tbl_nd_socket, &idx, &data, BPF_ANY);
     }
+
+#endif
 }
 
 static __always_inline void update_pid_connection(struct inet_sock *is)
 {
     netdata_socket_idx_t idx = { };
 
-    netdata_socket_t *stored;
     netdata_socket_t data = { };
 
     __u16 family = set_idx_value(&idx, is);
     if (family == AF_UNSPEC)
         return;
 
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+    update_socket_common(&data, IPPROTO_TCP, family);
+    if (family == AF_INET)
+        data.tcp.ipv4_connect = 1;
+    else
+        data.tcp.ipv6_connect = 1;
+    netdata_socket_emit_event(&idx, &data);
+#else
+    netdata_socket_t *stored;
     stored = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (stored) {
         stored->ct = bpf_ktime_get_ns();
@@ -221,6 +274,8 @@ static __always_inline void update_pid_connection(struct inet_sock *is)
 
         libnetdata_update_global(&socket_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
     }
+
+#endif
 }
 
 static __always_inline int common_tcp_send_message(struct inet_sock *is, size_t sent, int ret)
@@ -294,6 +349,12 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
     if (family == AF_UNSPEC)
         return 0;
 
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+    netdata_socket_t nv_data = { };
+    update_socket_common(&nv_data, protocol, family);
+    nv_data.external_origin = 1;
+    netdata_socket_emit_event(&nv_idx, &nv_data);
+#else
     netdata_socket_t *val;
     netdata_socket_t nv_data = { };
 
@@ -306,6 +367,7 @@ static __always_inline int netdata_common_inet_csk_accept(struct sock *sk)
 
         bpf_map_update_elem(&tbl_nd_socket, &nv_idx, &nv_data, BPF_ANY);
     }
+#endif
 
     return 0;
 }
@@ -347,7 +409,6 @@ static __always_inline int netdata_common_tcp_set_state(struct inet_sock *is, in
 
 static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
 {
-    netdata_socket_t *val;
     __u16 family;
     netdata_socket_idx_t idx = { };
 
@@ -357,10 +418,18 @@ static __always_inline int netdata_common_tcp_close(struct inet_sock *is)
     if (family == AF_UNSPEC)
         return 0;
 
+#if defined(NETDATA_SOCKET_BUFFER_MODE)
+    netdata_socket_t data = { };
+    update_socket_common(&data, IPPROTO_TCP, family);
+    data.tcp.close = 1;
+    netdata_socket_emit_event(&idx, &data);
+#else
+    netdata_socket_t *val;
     val = (netdata_socket_t *) bpf_map_lookup_elem(&tbl_nd_socket, &idx);
     if (val) {
         libnetdata_update_u32(&val->tcp.close, 1);
     }
+#endif
 
     return 0;
 }
@@ -424,6 +493,7 @@ int BPF_KRETPROBE(netdata_inet_csk_accept_kretprobe)
     return netdata_common_inet_csk_accept(sk);
 }
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL >= 2
 SEC("kprobe/tcp_v4_connect")
 int BPF_KRETPROBE(netdata_tcp_v4_connect_kprobe)
 {
@@ -431,7 +501,9 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kprobe)
     return netdata_common_tcp_connect(is, 0, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
 }
+#endif
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL < 2
 SEC("kretprobe/tcp_v4_connect")
 int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
 {
@@ -441,7 +513,9 @@ int BPF_KRETPROBE(netdata_tcp_v4_connect_kretprobe)
     return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV4,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV4);
 }
+#endif
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL >= 2
 SEC("kprobe/tcp_v6_connect")
 int BPF_KRETPROBE(netdata_tcp_v6_connect_kprobe)
 {
@@ -449,7 +523,9 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kprobe)
     return netdata_common_tcp_connect(is, 0, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV6);
 }
+#endif
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL < 2
 SEC("kretprobe/tcp_v6_connect")
 int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
 {
@@ -459,6 +535,7 @@ int BPF_KRETPROBE(netdata_tcp_v6_connect_kretprobe)
     return netdata_common_tcp_connect(is, ret, NETDATA_KEY_CALLS_TCP_CONNECT_IPV6,
                                       NETDATA_KEY_ERROR_TCP_CONNECT_IPV6);
 }
+#endif
 
 SEC("kprobe/tcp_retransmit_skb")
 int BPF_KPROBE(netdata_tcp_retransmit_skb_kprobe)
@@ -497,6 +574,7 @@ int BPF_KPROBE(netdata_tcp_close_kprobe)
 }
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L1726
+/* The entry probe saves the socket; the return probe emits received bytes. */
 SEC("kprobe/udp_recvmsg")
 int BPF_KPROBE(netdata_udp_recvmsg_kprobe)
 {
@@ -514,6 +592,7 @@ int BPF_KRETPROBE(netdata_udp_recvmsg_kretprobe)
     return netdata_common_udp_recvmsg_return(is, received);
 }
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL < 2
 SEC("kretprobe/tcp_sendmsg")
 int BPF_KRETPROBE(netdata_tcp_sendmsg_kretprobe)
 {
@@ -523,7 +602,9 @@ int BPF_KRETPROBE(netdata_tcp_sendmsg_kretprobe)
     struct inet_sock *is = (struct inet_sock *)((struct sock *)PT_REGS_PARM1(ctx));
     return common_tcp_send_message(is, sent, ret);
 }
+#endif
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL >= 2
 SEC("kprobe/tcp_sendmsg")
 int BPF_KPROBE(netdata_tcp_sendmsg_kprobe)
 {
@@ -532,8 +613,10 @@ int BPF_KPROBE(netdata_tcp_sendmsg_kprobe)
 
     return common_tcp_send_message(is, sent, 0);
 }
+#endif
 
 // https://elixir.bootlin.com/linux/v5.6.14/source/net/ipv4/udp.c#L965
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL < 2
 SEC("kretprobe/udp_sendmsg")
 int BPF_KRETPROBE(netdata_udp_sendmsg_kretprobe)
 {
@@ -543,7 +626,9 @@ int BPF_KRETPROBE(netdata_udp_sendmsg_kretprobe)
 
     return common_udp_send_message(is, sent, ret);
 }
+#endif
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE) || NETDATASEL >= 2
 SEC("kprobe/udp_sendmsg")
 int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 {
@@ -552,6 +637,7 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 
     return common_udp_send_message(is, sent, 0);
 }
+#endif
 
 /***********************************************************************************
  *
@@ -559,6 +645,7 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
  *
  ***********************************************************************************/
 
+#if !defined(NETDATA_SOCKET_BUFFER_MODE)
 SEC("fexit/inet_csk_accept")
 int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
 {
@@ -725,5 +812,6 @@ int BPF_PROG(netdata_udp_sendmsg_fexit, struct sock *sk, struct msghdr *msg, siz
 
     return common_udp_send_message(is, sent, ret);
 }
+#endif
 
 char _license[] SEC("license") = "GPL";

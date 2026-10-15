@@ -5,6 +5,12 @@
 
 #include "netdata_defs.h"
 
+#include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
@@ -26,6 +32,54 @@ enum NETDATA_EBPF_CORE_IDX {
 #define NETDATA_EBPF_KERNEL_5_19_0 332544
 
 #define NETDATA_CORE_PROCESS_NUMBER 4096
+
+static inline int netdata_core_update_test_map(int fd, const void *key, const void *value,
+                                               size_t value_size, __u64 flags)
+{
+    struct bpf_map_info info = { };
+    __u32 info_len = sizeof(info);
+    int err;
+
+    err = bpf_obj_get_info_by_fd(fd, &info, &info_len);
+    if (err)
+        return err;
+    if (value_size != info.value_size)
+        return -EINVAL;
+
+    if (info.type != BPF_MAP_TYPE_PERCPU_HASH &&
+        info.type != BPF_MAP_TYPE_PERCPU_ARRAY &&
+        info.type != BPF_MAP_TYPE_LRU_PERCPU_HASH)
+        return bpf_map_update_elem(fd, key, value, flags);
+
+    int cpus = libbpf_num_possible_cpus();
+    if (cpus <= 0)
+        return cpus ? cpus : -EINVAL;
+
+    size_t stride = (value_size + 7U) & ~(size_t)7U;
+    if ((size_t)cpus > SIZE_MAX / stride)
+        return -EOVERFLOW;
+
+    size_t buffer_size = (size_t)cpus * stride;
+    void *per_cpu = calloc(1, buffer_size);
+    if (!per_cpu)
+        return -ENOMEM;
+
+    for (int cpu = 0; cpu < cpus; cpu++)
+        memcpy((char *)per_cpu + (size_t)cpu * stride, value, value_size);
+
+    err = bpf_map_update_elem(fd, key, per_cpu, flags);
+    free(per_cpu);
+    return err;
+}
+
+static inline pid_t ebpf_core_fill_global(int fd)
+{
+    uint32_t key = 0;
+    uint64_t value = 1;
+    if (netdata_core_update_test_map(fd, &key, &value, sizeof(value), 0))
+        fprintf(stderr, "Cannot insert value to global table.");
+    return getpid();
+}
 
 typedef struct ebpf_specify_name {
     char *program_name;

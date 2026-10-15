@@ -1,11 +1,14 @@
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <getopt.h>
-
-#define _GNU_SOURCE         /* See feature_test_macros(7) */
-#define __USE_GNU
-#include <fcntl.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "netdata_defs.h"
@@ -14,21 +17,204 @@
 
 #include "disk.skel.h"
 
-// Copied and redefined from ../include/netdata_disk.h
 typedef struct block_key {
     uint32_t bin;
     uint32_t dev;
 } block_key_t;
 
-static inline int ebpf_load_and_attach(struct disk_bpf *obj)
+typedef struct disk_attach_links {
+    struct bpf_link *links[8];
+    size_t count;
+} disk_attach_links_t;
+
+static int disk_symbol_in_kallsyms(const char *name)
 {
-    int ret = disk_bpf__load(obj);
+    FILE *f = fopen("/proc/kallsyms", "r");
+    char line[512];
+    char symbol[256];
+    int found = 0;
+
+    if (!f)
+        return 1;
+
+    while (!found && fgets(line, sizeof(line), f)) {
+        if (sscanf(line, "%*x %*c %255s", symbol) == 1)
+            found = !strcmp(symbol, name);
+    }
+    fclose(f);
+    return found;
+}
+
+static int disk_attach_target(disk_attach_links_t *links, struct bpf_program *prog, const char *target)
+{
+    struct bpf_link *link;
+    int err;
+
+    if (links->count >= sizeof(links->links) / sizeof(links->links[0]))
+        return -ENOSPC;
+
+    link = bpf_program__attach_kprobe(prog, false, target);
+    err = libbpf_get_error(link);
+    if (err)
+        return err;
+
+    links->links[links->count++] = link;
+    return 0;
+}
+
+static int disk_attach_request_probes(struct disk_bpf *obj, disk_attach_links_t *links)
+{
+    struct bpf_program *issue = obj->progs.netdata_block_rq_issue;
+    struct bpf_program *complete = obj->progs.netdata_block_rq_complete;
+    int have_start = disk_symbol_in_kallsyms("blk_mq_start_request");
+    int have_legacy_start = disk_symbol_in_kallsyms("blk_start_request");
+    int have_end = disk_symbol_in_kallsyms("blk_mq_end_request");
+    int have_internal_end = disk_symbol_in_kallsyms("__blk_mq_end_request");
+    int have_free = disk_symbol_in_kallsyms("blk_mq_free_request");
+    int err;
+
+    if (have_start) {
+        err = disk_attach_target(links, issue, "blk_mq_start_request");
+        if (err)
+            return err;
+        if (have_legacy_start) {
+            err = disk_attach_target(links, issue, "blk_start_request");
+            if (err)
+                return err;
+        }
+    } else if (have_legacy_start) {
+        err = disk_attach_target(links, issue, "blk_start_request");
+        if (err)
+            return err;
+    } else {
+        return -ENOENT;
+    }
+
+    if (have_end) {
+        err = disk_attach_target(links, complete, "blk_mq_end_request");
+        if (err)
+            return err;
+        if (have_internal_end) {
+            err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_internal,
+                                     "__blk_mq_end_request");
+            if (err)
+                return err;
+        } else if (have_free) {
+            err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_free,
+                                     "blk_mq_free_request");
+            if (err)
+                return err;
+        }
+    } else if (have_internal_end) {
+        err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_internal,
+                                 "__blk_mq_end_request");
+        if (err)
+            return err;
+    } else if (have_free) {
+        err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_free,
+                                 "blk_mq_free_request");
+        if (err)
+            return err;
+    } else {
+        return -ENOENT;
+    }
+
+    if (disk_symbol_in_kallsyms("blk_complete_request")) {
+        err = disk_attach_target(links, obj->progs.netdata_blk_complete_request,
+                                 "blk_complete_request");
+        if (err)
+            return err;
+    }
+
+    return 0;
+}
+
+static int disk_histogram_total(int fd, int possible_cpus, uint64_t *total)
+{
+    block_key_t key = { }, next_key = { };
+    uint64_t *percpu;
+    int ret;
+
+    percpu = calloc((size_t)possible_cpus, sizeof(*percpu));
+    if (!percpu)
+        return -ENOMEM;
+
+    *total = 0;
+    ret = bpf_map_get_next_key(fd, NULL, &next_key);
+    while (!ret) {
+        int cpu;
+        if (!bpf_map_lookup_elem(fd, &next_key, percpu)) {
+            for (cpu = 0; cpu < possible_cpus; cpu++)
+                *total += percpu[cpu];
+        }
+        key = next_key;
+        ret = bpf_map_get_next_key(fd, &key, &next_key);
+    }
+
+    free(percpu);
+    return 0;
+}
+
+static int disk_generate_io(void)
+{
+    char path[] = "/var/tmp/netdata-disk-core-XXXXXX";
+    void *buffer = NULL;
+    int fd = -1;
+    int err = 0;
+    size_t i;
+    struct stat st;
+
+    fd = mkstemp(path);
+    if (fd < 0)
+        return -errno;
+
+    if (fstat(fd, &st)) {
+        err = -errno;
+        goto out;
+    }
+    if (major(st.st_dev) == 0) {
+        err = -EOPNOTSUPP;
+        goto out;
+    }
+
+    if (posix_memalign(&buffer, 4096, 4096)) {
+        err = -ENOMEM;
+        goto out;
+    }
+    memset(buffer, 0x5a, 4096);
+
+    for (i = 0; i < 256; i++) {
+        ssize_t written = write(fd, buffer, 4096);
+        if (written != 4096) {
+            err = written < 0 ? -errno : -EIO;
+            goto out;
+        }
+    }
+    if (fsync(fd))
+        err = -errno;
+
+out:
+    free(buffer);
+    if (fd >= 0)
+        close(fd);
+    unlink(path);
+    return err;
+}
+
+static inline int ebpf_load_and_attach(struct disk_bpf *obj, disk_attach_links_t *links)
+{
+    int ret = bpf_program__set_autoload(obj->progs.netdata_blk_complete_request,
+                                        disk_symbol_in_kallsyms("blk_complete_request"));
+    if (ret)
+        return ret;
+
+    ret = disk_bpf__load(obj);
     if (ret) {
         fprintf(stderr, "failed to load BPF object: %d\n", ret);
         return -1;
-    } 
+    }
 
-    ret = disk_bpf__attach(obj);
+    ret = disk_attach_request_probes(obj, links);
     if (!ret) {
         fprintf(stdout, "Disk loaded with success\n");
     }
@@ -36,42 +222,12 @@ static inline int ebpf_load_and_attach(struct disk_bpf *obj)
     return ret;
 }
 
-static void ebpf_update_table(int global)
-{
-    block_key_t idx =  { .bin = 0, .dev = 0};
-    unsigned char value = 'a';
-    int ret = bpf_map_update_elem(global, &idx, &value, 0);
-    if (ret)
-        fprintf(stderr, "Cannot insert value to global table.");
-}
-
-static int disk_read_array(int fd, int ebpf_nprocs)
-{
-    uint64_t stored[ebpf_nprocs];
-
-    uint64_t counter = 0;
-    block_key_t idx =  { .bin = 0, .dev = 0};
-    if (!bpf_map_lookup_elem(fd, &idx, stored)) {
-        int j;
-        for (j = 0; j < ebpf_nprocs; j++) {
-            counter += stored[j];
-        }
-    }
-
-    if (counter) {
-        fprintf(stdout, "Data stored with success\n");
-        return 0;
-    }
-
-    return 2;
-}
-
 static int ebpf_disk_tests()
 {
     struct disk_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    disk_attach_links_t links = { };
+    int possible_cpus = libbpf_num_possible_cpus();
+    uint64_t before = 0, after = 0;
 
     obj = disk_bpf__open();
     if (!obj) {
@@ -80,19 +236,52 @@ static int ebpf_disk_tests()
         return 2;
     }
 
-    int ret = ebpf_load_and_attach(obj);
-    if (!ret) {
-        int fd = bpf_map__fd(obj->maps.tbl_disk_iocall);
-        ebpf_update_table(fd);
+    if (possible_cpus <= 0) {
+        disk_bpf__destroy(obj);
+        return 2;
+    }
 
-        ret = disk_read_array(fd, ebpf_nprocs);
-        if (ret)
-            fprintf(stderr, "Cannot read global table\n");
+    if (bpf_map__key_size(obj->maps.tbl_disk_iocall) != sizeof(block_key_t)) {
+        fprintf(stderr, "Disk histogram key size does not match the userspace layout\n");
+        disk_bpf__destroy(obj);
+        return 2;
+    }
+
+    int ret = ebpf_load_and_attach(obj, &links);
+    if (!ret) {
+        int io_skipped = 0;
+        int fd = bpf_map__fd(obj->maps.tbl_disk_iocall);
+        ret = disk_histogram_total(fd, possible_cpus, &before);
+        if (!ret)
+            ret = disk_generate_io();
+        if (ret == -EOPNOTSUPP) {
+            fprintf(stdout, "Disk I/O check skipped: /var/tmp is not on a block-backed filesystem\n");
+            ret = 0;
+            io_skipped = 1;
+        }
+        if (!ret && !io_skipped) {
+            struct timespec delay = { .tv_sec = 0, .tv_nsec = 100000000 };
+            int attempts;
+            for (attempts = 0; attempts < 20; attempts++) {
+                nanosleep(&delay, NULL);
+                ret = disk_histogram_total(fd, possible_cpus, &after);
+                if (ret || after > before)
+                    break;
+            }
+        }
+        if (!ret && !io_skipped && after > before)
+            fprintf(stdout, "Disk request latency recorded successfully\n");
+        else if (!ret && !io_skipped) {
+            fprintf(stderr, "No disk request latency was recorded during the I/O check\n");
+            ret = 2;
+        }
     } else {
         ret = 3;
         fprintf(stderr ,"%s", NETDATA_CORE_DEFAULT_ERROR);
     }
 
+    while (links.count)
+        bpf_link__destroy(links.links[--links.count]);
     disk_bpf__destroy(obj);
 
     return ret;

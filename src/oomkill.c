@@ -79,9 +79,9 @@ static int oomkill_read_array(int fd, int ebpf_nprocs)
 static int ebpf_oomkill_tests()
 {
     struct oomkill_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = oomkill_bpf__open();
     if (!obj) {

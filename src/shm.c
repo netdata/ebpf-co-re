@@ -175,14 +175,14 @@ static void shm_fill_tables(struct shm_bpf *obj)
     uint32_t key;
     uint64_t global_data = 64;
     for (key = 0; key < NETDATA_SHM_END; key++) {
-        if (bpf_map_update_elem(fd, &key, &global_data, BPF_ANY))
+        if (netdata_core_update_test_map(fd, &key, &global_data, sizeof(global_data), BPF_ANY))
             fprintf(stderr, "Cannot insert key %u\n", key);
     }
 
     fd = bpf_map__fd(obj->maps.tbl_pid_shm);
     netdata_shm_t apps_data = { .get = 1, .at = 1, .dt = 1, .ctl = 1};
     for (key = 0; key < NETDATA_EBPF_CORE_MIN_STORE; key++) {
-        if (bpf_map_update_elem(fd, &key, &apps_data, BPF_ANY))
+        if (netdata_core_update_test_map(fd, &key, &apps_data, sizeof(apps_data), BPF_ANY))
             fprintf(stderr, "Cannot insert key %u\n", key);
     }
 }
@@ -214,9 +214,9 @@ static int shm_read_apps_array(int fd, int ebpf_nprocs)
 static int ebpf_shm_tests(struct btf *bf, int selector, enum netdata_apps_level map_level)
 {
     struct shm_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     if (bf)
         selector = ebpf_find_functions(bf, selector, syscalls, NETDATA_SHM_END);

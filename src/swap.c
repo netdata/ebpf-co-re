@@ -174,13 +174,13 @@ static int ebpf_load_and_attach(struct swap_bpf *obj, int selector)
 
 static void ebpf_fill_tables(int global, int apps)
 {
-    (void)ebpf_fill_global(global);
+    (void)ebpf_core_fill_global(global);
 
     netdata_swap_access_t swap_data = { .read = 1, .write = 1 };
 
     uint32_t idx;
     for (idx = 0; idx < NETDATA_EBPF_CORE_MIN_STORE; idx++) {
-        int ret = bpf_map_update_elem(apps, &idx, &swap_data, 0);
+        int ret = netdata_core_update_test_map(apps, &idx, &swap_data, sizeof(swap_data), 0);
         if (ret)
             fprintf(stderr, "Cannot insert value to apps table.");
     }
@@ -212,9 +212,9 @@ static int swap_read_apps_array(int fd, int ebpf_nprocs)
 
 static int ebpf_load_swap(int selector, enum netdata_apps_level map_level)
 {
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     struct swap_bpf *obj = NULL;
 

@@ -26,6 +26,7 @@ static void netdata_disable_libbpf_memlock_rlim(void)
 #include "fd_buffer.skel.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
+#include "socket_buffer.skel.h"
 #include "shm_buffer.skel.h"
 #include "swap_buffer.skel.h"
 #include "vfs_buffer.skel.h"
@@ -82,6 +83,7 @@ DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_buffer)
@@ -93,6 +95,7 @@ static const struct netdata_core_buffer_skel_ops netdata_core_buffer_skel_ops[] 
 	{ "fd", netdata_core_open_fd_buffer, netdata_core_load_fd_buffer, netdata_core_destroy_fd_buffer },
 	{ "oomkill", netdata_core_open_oomkill_buffer, netdata_core_load_oomkill_buffer, netdata_core_destroy_oomkill_buffer },
 	{ "process", netdata_core_open_process_buffer, netdata_core_load_process_buffer, netdata_core_destroy_process_buffer },
+	{ "socket", netdata_core_open_socket_buffer, netdata_core_load_socket_buffer, netdata_core_destroy_socket_buffer },
 	{ "shm", netdata_core_open_shm_buffer, netdata_core_load_shm_buffer, netdata_core_destroy_shm_buffer },
 	{ "swap", netdata_core_open_swap_buffer, netdata_core_load_swap_buffer, netdata_core_destroy_swap_buffer },
 	{ "vfs", netdata_core_open_vfs_buffer, netdata_core_load_vfs_buffer, netdata_core_destroy_vfs_buffer },
@@ -118,6 +121,7 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 #include "netdata_fd_arena.h"
 #include "netdata_oomkill_arena.h"
 #include "netdata_process_arena.h"
+#include "netdata_socket_arena.h"
 #include "netdata_shm_arena.h"
 #include "netdata_swap_arena.h"
 #include "netdata_vfs_arena.h"
@@ -128,6 +132,7 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 #include "fd_arena.skel.h"
 #include "oomkill_arena.skel.h"
 #include "process_arena.skel.h"
+#include "socket_arena.skel.h"
 #include "shm_arena.skel.h"
 #include "swap_arena.skel.h"
 #include "vfs_arena.skel.h"
@@ -145,6 +150,7 @@ DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dns_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fd_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(oomkill_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(process_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(socket_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(shm_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(swap_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(vfs_arena);
@@ -156,6 +162,7 @@ DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_arena)
@@ -167,6 +174,7 @@ static const struct netdata_core_buffer_skel_ops netdata_core_arena_skel_ops[] =
 	{ "fd", netdata_core_open_fd_arena, netdata_core_load_fd_arena, netdata_core_destroy_fd_arena },
 	{ "oomkill", netdata_core_open_oomkill_arena, netdata_core_load_oomkill_arena, netdata_core_destroy_oomkill_arena },
 	{ "process", netdata_core_open_process_arena, netdata_core_load_process_arena, netdata_core_destroy_process_arena },
+	{ "socket", netdata_core_open_socket_arena, netdata_core_load_socket_arena, netdata_core_destroy_socket_arena },
 	{ "shm", netdata_core_open_shm_arena, netdata_core_load_shm_arena, netdata_core_destroy_shm_arena },
 	{ "swap", netdata_core_open_swap_arena, netdata_core_load_swap_arena, netdata_core_destroy_swap_arena },
 	{ "vfs", netdata_core_open_vfs_arena, netdata_core_load_vfs_arena, netdata_core_destroy_vfs_arena },
@@ -899,7 +907,7 @@ var aggregateTests = []aggregateTestCase{
 	{name: "oomkill", binary: "oomkill", selectionBit: selectOOMKill, bufferSupported: true, arenaSupported: true},
 	{name: "process", binary: "process", selectionBit: selectProcess, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "process_ctrl"},
 	{name: "shm", binary: "shm", selectionBit: selectSHM, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "shm_ctrl"},
-	{name: "socket", binary: "socket", selectionBit: selectSocket, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true},
+	{name: "socket", binary: "socket", selectionBit: selectSocket, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "socket_ctrl"},
 	{name: "softirq", binary: "softirq", selectionBit: selectSoftirq},
 	{name: "swap", binary: "swap", selectionBit: selectSwap, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true, pidSupported: true, bufferSupported: true, arenaSupported: true, bufferCtrl: "swap_ctrl"},
 	{name: "sync", binary: "sync", selectionBit: selectSync, modes: modeProbe | modeTracepoint | modeTrampoline, emitModeArg: true},
@@ -1193,7 +1201,7 @@ func printHelp(out io.Writer, name string) {
 			"  --all             Run all non-filesystem CO-RE tests. This is the default.\n"+
 			"  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"+
 			"  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"+
-			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
+			"  --iteration N     DNS keeps a fixed 5-second capture (deprecated there); buffer/arena runs use N loops.\n"+
 			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
 			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+

@@ -248,12 +248,12 @@ static inline int ebpf_load_and_attach(struct socket_bpf *obj, int selector)
 static inline pid_t update_global(struct socket_bpf *obj)
 {
     int fd = bpf_map__fd(obj->maps.tbl_global_sock);
-    return ebpf_fill_global(fd);
+    return ebpf_core_fill_global(fd);
 }
 
 static inline int update_socket_tables(int fd, netdata_socket_idx_t *idx, netdata_socket_t *values)
 {
-    int ret = bpf_map_update_elem(fd, idx, values, 0);
+    int ret = netdata_core_update_test_map(fd, idx, values, sizeof(*values), 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to socket table.\n");
 
@@ -331,9 +331,9 @@ static int netdata_read_local_ports(struct socket_bpf *obj)
 static int ebpf_socket_tests(int selector, enum netdata_apps_level map_level)
 {
     struct socket_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = socket_bpf__open();
     if (!obj) {

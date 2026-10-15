@@ -147,9 +147,9 @@ static int call_syscalls()
 
 static int mount_read_array(int fd)
 {
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
     uint64_t stored[ebpf_nprocs];
 
     uint32_t idx;

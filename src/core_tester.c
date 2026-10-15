@@ -26,6 +26,7 @@
 #include "fd_buffer.skel.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
+#include "socket_buffer.skel.h"
 #include "shm_buffer.skel.h"
 #include "swap_buffer.skel.h"
 #include "vfs_buffer.skel.h"
@@ -39,6 +40,7 @@
 #include "netdata_fd_arena.h"
 #include "netdata_oomkill_arena.h"
 #include "netdata_process_arena.h"
+#include "netdata_socket_arena.h"
 #include "netdata_shm_arena.h"
 #include "netdata_swap_arena.h"
 #include "netdata_vfs_arena.h"
@@ -49,6 +51,7 @@
 #include "fd_arena.skel.h"
 #include "oomkill_arena.skel.h"
 #include "process_arena.skel.h"
+#include "socket_arena.skel.h"
 #include "shm_arena.skel.h"
 #include "swap_arena.skel.h"
 #include "vfs_arena.skel.h"
@@ -223,6 +226,7 @@ DEFINE_BUFFER_SKEL_OPS(dns_buffer)
 DEFINE_BUFFER_SKEL_OPS(fd_buffer)
 DEFINE_BUFFER_SKEL_OPS(oomkill_buffer)
 DEFINE_BUFFER_SKEL_OPS(process_buffer)
+DEFINE_BUFFER_SKEL_OPS(socket_buffer)
 DEFINE_BUFFER_SKEL_OPS(shm_buffer)
 DEFINE_BUFFER_SKEL_OPS(swap_buffer)
 DEFINE_BUFFER_SKEL_OPS(vfs_buffer)
@@ -234,6 +238,7 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
     { "fd", open_fd_buffer, load_fd_buffer, destroy_fd_buffer },
     { "oomkill", open_oomkill_buffer, load_oomkill_buffer, destroy_oomkill_buffer },
     { "process", open_process_buffer, load_process_buffer, destroy_process_buffer },
+    { "socket", open_socket_buffer, load_socket_buffer, destroy_socket_buffer },
     { "shm", open_shm_buffer, load_shm_buffer, destroy_shm_buffer },
     { "swap", open_swap_buffer, load_swap_buffer, destroy_swap_buffer },
     { "vfs", open_vfs_buffer, load_vfs_buffer, destroy_vfs_buffer },
@@ -247,6 +252,7 @@ DEFINE_BUFFER_SKEL_OPS(dns_arena)
 DEFINE_BUFFER_SKEL_OPS(fd_arena)
 DEFINE_BUFFER_SKEL_OPS(oomkill_arena)
 DEFINE_BUFFER_SKEL_OPS(process_arena)
+DEFINE_BUFFER_SKEL_OPS(socket_arena)
 DEFINE_BUFFER_SKEL_OPS(shm_arena)
 DEFINE_BUFFER_SKEL_OPS(swap_arena)
 DEFINE_BUFFER_SKEL_OPS(vfs_arena)
@@ -258,6 +264,7 @@ static const buffer_skel_ops_t arena_skel_ops[] = {
     { "fd", open_fd_arena, load_fd_arena, destroy_fd_arena },
     { "oomkill", open_oomkill_arena, load_oomkill_arena, destroy_oomkill_arena },
     { "process", open_process_arena, load_process_arena, destroy_process_arena },
+    { "socket", open_socket_arena, load_socket_arena, destroy_socket_arena },
     { "shm", open_shm_arena, load_shm_arena, destroy_shm_arena },
     { "swap", open_swap_arena, load_swap_arena, destroy_swap_arena },
     { "vfs", open_vfs_arena, load_vfs_arena, destroy_vfs_arena },
@@ -302,7 +309,7 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "shm", "shm", netdata_shm_entry, NULL, NULL, SELECT_SHM,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "shm_ctrl" },
     { "socket", "socket", netdata_socket_entry, NULL, NULL, SELECT_SOCKET,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "socket_ctrl" },
     { "softirq", "softirq", netdata_softirq_entry, NULL, NULL, SELECT_SOFTIRQ,
       MODE_NONE, 0, 0 },
     { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
@@ -1135,7 +1142,7 @@ static void print_help(const char *name)
             "  --all             Run all non-filesystem CO-RE tests. This is the default.\n"
             "  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"
             "  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"
-            "  --iteration N     Forward the capture iteration count to the DNS tester.\n"
+            "  --iteration N     DNS keeps a fixed 5-second capture (deprecated there); buffer/arena runs use N loops.\n"
             "  --tests-dir PATH  Accepted for compatibility and ignored in standalone mode.\n"
             "  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"
             "  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"

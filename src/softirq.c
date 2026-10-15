@@ -41,13 +41,22 @@ static inline int ebpf_load_and_attach(struct softirq_bpf *obj)
     return ret;
 }
 
-static void ebpf_update_table(int global)
+static int ebpf_update_table(int global, int possible_cpus)
 {
     uint32_t idx = 0;
     softirq_val_t value =  { .ts = 1, .latency = 1 };
-    int ret = bpf_map_update_elem(global, &idx, &value, 0);
+    softirq_val_t *per_cpu = calloc((size_t)possible_cpus, sizeof(*per_cpu));
+    if (!per_cpu)
+        return -1;
+
+    for (int cpu = 0; cpu < possible_cpus; cpu++)
+        per_cpu[cpu] = value;
+
+    int ret = bpf_map_update_elem(global, &idx, per_cpu, 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to global table.");
+    free(per_cpu);
+    return ret;
 }
 
 static int softirq_read_array(int fd, int ebpf_nprocs)
@@ -74,9 +83,9 @@ static int softirq_read_array(int fd, int ebpf_nprocs)
 static int ebpf_softirq_tests()
 {
     struct softirq_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = softirq_bpf__open();
     if (!obj) {
@@ -88,9 +97,9 @@ static int ebpf_softirq_tests()
     int ret = ebpf_load_and_attach(obj);
     if (!ret) {
         int fd = bpf_map__fd(obj->maps.tbl_softirq);
-        ebpf_update_table(fd);
-
-        ret = softirq_read_array(fd, ebpf_nprocs);
+        ret = ebpf_update_table(fd, ebpf_nprocs);
+        if (!ret)
+            ret = softirq_read_array(fd, ebpf_nprocs);
         if (ret)
             fprintf(stderr, "Cannot read global table\n");
     } else {

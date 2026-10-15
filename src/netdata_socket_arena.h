@@ -1,0 +1,9 @@
+#ifndef _NETDATA_SOCKET_ARENA_H_
+#define _NETDATA_SOCKET_ARENA_H_ 1
+
+#include "netdata_socket_buffer.h"
+#include "netdata_arena_common.h"
+
+NETDATA_ARENA_QUEUE_DECL(socket, struct netdata_socket_event_t, NETDATA_ARENA_EVENT_SLOTS);
+
+#endif

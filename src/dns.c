@@ -15,6 +15,17 @@
 
 /* required by log macros in tester_dns.c which expect this symbol at link time */
 pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int dns_json_first_member = 1;
+
+void ebpf_json_member_prefix(void)
+{
+    pthread_mutex_lock(&log_mutex);
+    if (dns_json_first_member)
+        dns_json_first_member = 0;
+    else
+        fputs(",\n", stdout);
+    pthread_mutex_unlock(&log_mutex);
+}
 
 #define NETDATA_DNS_MAX_PORTS 32
 #define NETDATA_DNS_DEFAULT_PORT 53
@@ -31,7 +42,7 @@ static void dns_help(const char *name)
             "The following options are available:\n\n"
             "--help       : Print this help.\n"
             "--dns-port   : Comma separated list of DNS ports to monitor. Default is 53.\n"
-            "--iteration  : Number of 5-second capture windows. Default is 1.\n\n"
+            "--iteration  : Deprecated; DNS always captures for 5 seconds.\n\n"
             "This program opens an AF_PACKET raw socket, so it usually requires root.\n",
             name);
 }
@@ -117,6 +128,7 @@ static int dns_parse_iterations(const char *input)
     }
 
     dns_iterations = (int)value;
+    fprintf(stderr, "--iteration is deprecated for DNS and does not change its 5-second capture window.\n");
     return 0;
 }
 
@@ -137,6 +149,7 @@ static int dns_run_test(void)
         return 3;
     }
 
+    dns_json_first_member = 1;
     fprintf(stdout, "{\n    \"dns\" : {\n");
     status = ebpf_socket_filter_tester(obj->obj, 1, stdout, dns_iterations, dns_ports, dns_port_count);
     fprintf(stdout, "    },\n    \"Status\" :  \"%s\"\n}\n", status);

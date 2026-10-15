@@ -79,9 +79,15 @@ static inline void ebpf_disable_clone3(struct process_bpf *obj)
 
 static inline int process_attach_kprobe_target(struct process_bpf *obj)
 {
+    obj->links.netdata_wake_up_new_task = bpf_program__attach_kprobe(obj->progs.netdata_wake_up_new_task,
+                                                                      false, "wake_up_new_task");
+    int ret = libbpf_get_error(obj->links.netdata_wake_up_new_task);
+    if (ret)
+        goto endakt;
+
     obj->links.netdata_release_task_probe = bpf_program__attach_kprobe(obj->progs.netdata_release_task_probe,
                                                                     false, names[PROCESS_RELEASE_TASK_NAME]);
-    int ret = libbpf_get_error(obj->links.netdata_release_task_probe);
+    ret = libbpf_get_error(obj->links.netdata_release_task_probe);
     if (ret)
         goto endakt;
 
@@ -129,14 +135,6 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
     ebpf_disable_clone3(obj);
 #endif
 
-#if (MY_LINUX_VERSION_CODE <= KERNEL_VERSION(6,16,0))
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, true);
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, false);
-#else
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork_v2, true);
-    bpf_program__set_autoload(obj->progs.netdata_tracepoint_sched_process_fork, false);
-#endif
-
     int ret = process_bpf__load(obj);
     if (ret) {
         fprintf(stderr, "failed to load BPF object: %d\n", ret);
@@ -157,7 +155,7 @@ static inline int ebpf_load_and_attach(struct process_bpf *obj, int selector)
 
 static pid_t ebpf_update_tables(int global, int apps)
 {
-    pid_t pid = ebpf_fill_global(global);
+    pid_t pid = ebpf_core_fill_global(global);
 
     struct netdata_pid_stat_t stats = { .pid = pid, .tgid = pid, .exit_call = 1, .release_call = 1,
                                         .create_process = 1, .create_thread = 1, .task_err = 1 };
@@ -200,9 +198,9 @@ static int process_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 static int ebpf_process_tests(int selector, enum netdata_apps_level map_level)
 {
     struct process_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = process_bpf__open();
     if (!obj) {
