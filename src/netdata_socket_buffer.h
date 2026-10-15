@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef _NETDATA_SOCKET_BUFFER_H_
 #define _NETDATA_SOCKET_BUFFER_H_ 1
 
@@ -10,4 +12,4 @@ struct netdata_socket_event_t {
     netdata_socket_t data;
 };
 
-#endif
+#endif /* _NETDATA_SOCKET_BUFFER_H_ */

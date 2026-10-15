@@ -24,9 +24,9 @@ static void netdata_disable_libbpf_memlock_rlim(void)
 #include "dc_buffer.skel.h"
 #include "dns_buffer.skel.h"
 #include "fd_buffer.skel.h"
+#include "socket_buffer.skel.h"
 #include "oomkill_buffer.skel.h"
 #include "process_buffer.skel.h"
-#include "socket_buffer.skel.h"
 #include "shm_buffer.skel.h"
 #include "swap_buffer.skel.h"
 #include "vfs_buffer.skel.h"
@@ -81,9 +81,9 @@ DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(cachestat_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dc_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_buffer)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_buffer)
-DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_buffer)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_buffer)
@@ -93,9 +93,9 @@ static const struct netdata_core_buffer_skel_ops netdata_core_buffer_skel_ops[] 
 	{ "dc", netdata_core_open_dc_buffer, netdata_core_load_dc_buffer, netdata_core_destroy_dc_buffer },
 	{ "dns", netdata_core_open_dns_buffer, netdata_core_load_dns_buffer, netdata_core_destroy_dns_buffer },
 	{ "fd", netdata_core_open_fd_buffer, netdata_core_load_fd_buffer, netdata_core_destroy_fd_buffer },
+	{ "socket", netdata_core_open_socket_buffer, netdata_core_load_socket_buffer, netdata_core_destroy_socket_buffer },
 	{ "oomkill", netdata_core_open_oomkill_buffer, netdata_core_load_oomkill_buffer, netdata_core_destroy_oomkill_buffer },
 	{ "process", netdata_core_open_process_buffer, netdata_core_load_process_buffer, netdata_core_destroy_process_buffer },
-	{ "socket", netdata_core_open_socket_buffer, netdata_core_load_socket_buffer, netdata_core_destroy_socket_buffer },
 	{ "shm", netdata_core_open_shm_buffer, netdata_core_load_shm_buffer, netdata_core_destroy_shm_buffer },
 	{ "swap", netdata_core_open_swap_buffer, netdata_core_load_swap_buffer, netdata_core_destroy_swap_buffer },
 	{ "vfs", netdata_core_open_vfs_buffer, netdata_core_load_vfs_buffer, netdata_core_destroy_vfs_buffer },
@@ -113,12 +113,13 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 	return NULL;
 }
 
-// BPF_MAP_TYPE_ARENA requires kernel >= 6.9 (version code 395520).
-#if MY_LINUX_VERSION_CODE >= 395520
+// Arena programs require verifier behavior available from kernel >= 6.13.
+#if MY_LINUX_VERSION_CODE >= 396544
 #include "netdata_cachestat_arena.h"
 #include "netdata_dc_arena.h"
 #include "netdata_dns_arena.h"
 #include "netdata_fd_arena.h"
+#include "netdata_socket_arena.h"
 #include "netdata_oomkill_arena.h"
 #include "netdata_process_arena.h"
 #include "netdata_socket_arena.h"
@@ -130,9 +131,9 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 #include "dc_arena.skel.h"
 #include "dns_arena.skel.h"
 #include "fd_arena.skel.h"
+#include "socket_arena.skel.h"
 #include "oomkill_arena.skel.h"
 #include "process_arena.skel.h"
-#include "socket_arena.skel.h"
 #include "shm_arena.skel.h"
 #include "swap_arena.skel.h"
 #include "vfs_arena.skel.h"
@@ -160,9 +161,9 @@ DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(cachestat_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dc_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(dns_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(fd_arena)
+DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(oomkill_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(process_arena)
-DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(socket_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(shm_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(swap_arena)
 DEFINE_NETDATA_CORE_BUFFER_SKEL_OPS(vfs_arena)
@@ -172,9 +173,9 @@ static const struct netdata_core_buffer_skel_ops netdata_core_arena_skel_ops[] =
 	{ "dc", netdata_core_open_dc_arena, netdata_core_load_dc_arena, netdata_core_destroy_dc_arena },
 	{ "dns", netdata_core_open_dns_arena, netdata_core_load_dns_arena, netdata_core_destroy_dns_arena },
 	{ "fd", netdata_core_open_fd_arena, netdata_core_load_fd_arena, netdata_core_destroy_fd_arena },
+	{ "socket", netdata_core_open_socket_arena, netdata_core_load_socket_arena, netdata_core_destroy_socket_arena },
 	{ "oomkill", netdata_core_open_oomkill_arena, netdata_core_load_oomkill_arena, netdata_core_destroy_oomkill_arena },
 	{ "process", netdata_core_open_process_arena, netdata_core_load_process_arena, netdata_core_destroy_process_arena },
-	{ "socket", netdata_core_open_socket_arena, netdata_core_load_socket_arena, netdata_core_destroy_socket_arena },
 	{ "shm", netdata_core_open_shm_arena, netdata_core_load_shm_arena, netdata_core_destroy_shm_arena },
 	{ "swap", netdata_core_open_swap_arena, netdata_core_load_swap_arena, netdata_core_destroy_swap_arena },
 	{ "vfs", netdata_core_open_vfs_arena, netdata_core_load_vfs_arena, netdata_core_destroy_vfs_arena },
@@ -191,7 +192,7 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_arena_skel_o
 
 	return NULL;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_name, int map_level)
 {
@@ -215,7 +216,8 @@ static void netdata_core_fill_ctrl_map(struct bpf_object *obj, const char *ctrl_
 }
 
 static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
-					 char *map_json_buf, int map_json_size)
+					 char *map_json_buf, int map_json_size, size_t *total_samples,
+					 size_t *ring_capacity)
 {
 	int map_type = (int)bpf_map__type(map);
 	int fd = bpf_map__fd(map);
@@ -227,6 +229,8 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	int i;
 	int pos = 0;
 	int n;
+	size_t collected = 0;
+	size_t capacity = 0;
 
 	if (iterations < 1)
 		iterations = 1;
@@ -267,11 +271,14 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 
 				iter_samples = stats.samples - prev.samples;
 				iter_bytes = stats.bytes - prev.bytes;
+				collected += iter_samples;
 				prev = stats;
 
 				if (ring) {
 					ring_sz = ring__size(ring);
 					avail = ring__avail_data_size(ring);
+					if (value_size)
+						capacity = ring_sz / value_size;
 				}
 			}
 
@@ -352,12 +359,18 @@ static int netdata_core_test_ringbuf_map(struct bpf_map *map, int iterations,
 	if (pos < map_json_size)
 		map_json_buf[pos] = '\0';
 
+	if (total_samples)
+		*total_samples = collected;
+	if (ring_capacity)
+		*ring_capacity = capacity;
+
 	return op_err;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
-				       char *map_json_buf, int map_json_size)
+				       char *map_json_buf, int map_json_size, size_t *total_samples,
+				       size_t *ring_capacity)
 {
 	int fd = bpf_map__fd(map);
 	unsigned int key_size = (unsigned int)bpf_map__key_size(map);
@@ -370,6 +383,8 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 	unsigned int prev_head = 0;
 	int pos = 0;
 	int n, i;
+	size_t collected = 0;
+	size_t capacity = 0;
 
 	if (iterations < 1)
 		iterations = 1;
@@ -395,7 +410,10 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 		if (arena_mem) {
 			cur_head = *(volatile unsigned int *)arena_mem;
 			delta = cur_head - prev_head;
+			collected += delta;
 			prev_head = cur_head;
+			if (value_size && data_sz > sizeof(unsigned int))
+				capacity = (data_sz - sizeof(unsigned int)) / value_size;
 		}
 
 		if (pos < map_json_size - 1) {
@@ -425,9 +443,14 @@ static int netdata_core_test_arena_map(struct bpf_map *map, int iterations,
 	if (pos < map_json_size)
 		map_json_buf[pos] = '\0';
 
+	if (total_samples)
+		*total_samples = collected;
+	if (ring_capacity)
+		*ring_capacity = capacity;
+
 	return setup_err;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 // Check whether a kernel symbol is present in /proc/kallsyms.
 static int netdata_core_symbol_in_kallsyms(const char *name)
@@ -501,7 +524,8 @@ static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
 
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 						     int *attached, int *skipped, int *maps, int *ring_maps,
-						     char *maps_json_buf, int maps_json_size)
+						     char *maps_json_buf, int maps_json_size, size_t *total_samples,
+						     size_t *ring_capacity)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_buffer_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -518,6 +542,10 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 	*skipped = 0;
 	*maps = 0;
 	*ring_maps = 0;
+	if (total_samples)
+		*total_samples = 0;
+	if (ring_capacity)
+		*ring_capacity = 0;
 
 	if (maps_json_buf && maps_json_size > 0)
 		maps_json_buf[0] = '\0';
@@ -595,7 +623,16 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 		}
 
 		map_json[0] = '\0';
-		err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+		{
+			size_t map_total_samples = 0;
+			size_t map_ring_capacity = 0;
+			err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json),
+							    &map_total_samples, &map_ring_capacity);
+			if (!err && total_samples)
+				*total_samples += map_total_samples;
+			if (!err && ring_capacity)
+				*ring_capacity += map_ring_capacity;
+		}
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
@@ -620,10 +657,11 @@ out:
 	return err;
 }
 
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 					    int *attached, int *skipped, int *maps, int *ring_maps,
-					    char *maps_json_buf, int maps_json_size)
+					    char *maps_json_buf, int maps_json_size, size_t *total_samples,
+					    size_t *ring_capacity)
 {
 	const struct netdata_core_buffer_skel_ops *ops = netdata_core_find_arena_skel_ops(name);
 	struct bpf_link *links[64] = { 0 };
@@ -640,6 +678,10 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 	*skipped = 0;
 	*maps = 0;
 	*ring_maps = 0;
+	if (total_samples)
+		*total_samples = 0;
+	if (ring_capacity)
+		*ring_capacity = 0;
 
 	if (maps_json_buf && maps_json_size > 0)
 		maps_json_buf[0] = '\0';
@@ -717,10 +759,20 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 			(*ring_maps)++;
 
 		map_json[0] = '\0';
-		if (map_type == BPF_MAP_TYPE_ARENA)
-			err = netdata_core_test_arena_map(map, iterations, map_json, (int)sizeof(map_json));
-		else
-			err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json));
+		{
+			size_t map_total_samples = 0;
+			size_t map_ring_capacity = 0;
+			if (map_type == BPF_MAP_TYPE_ARENA)
+				err = netdata_core_test_arena_map(map, iterations, map_json, (int)sizeof(map_json),
+								  &map_total_samples, &map_ring_capacity);
+			else
+				err = netdata_core_test_ringbuf_map(map, iterations, map_json, (int)sizeof(map_json),
+							    &map_total_samples, &map_ring_capacity);
+			if (!err && total_samples)
+				*total_samples += map_total_samples;
+			if (!err && ring_capacity)
+				*ring_capacity += map_ring_capacity;
+		}
 
 		if (maps_json_buf && maps_json_size > maps_pos) {
 			n = snprintf(maps_json_buf + maps_pos, (size_t)(maps_json_size - maps_pos), "%s", map_json);
@@ -744,21 +796,23 @@ out:
 
 	return err;
 }
-#else // MY_LINUX_VERSION_CODE < 395520 (but >= 329728): arena not supported
+#else // MY_LINUX_VERSION_CODE < 396544 (but >= 329728): arena not supported
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
-#endif // MY_LINUX_VERSION_CODE >= 395520
+#endif // MY_LINUX_VERSION_CODE >= 396544
 
 static int netdata_core_arena_supported(void)
 {
-#if MY_LINUX_VERSION_CODE >= 395520
+#if MY_LINUX_VERSION_CODE >= 396544
 	return 1;
 #else
 	return 0;
@@ -767,19 +821,23 @@ static int netdata_core_arena_supported(void)
 #else
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
 static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_name,
 	int map_level, int iterations, int *attached, int *skipped, int *maps, int *ring_maps,
-	char *maps_json_buf, int maps_json_size)
+	char *maps_json_buf, int maps_json_size, size_t *total_samples, size_t *ring_capacity)
 {
 	(void)name; (void)ctrl_name; (void)map_level; (void)iterations;
 	(void)attached; (void)skipped; (void)maps; (void)ring_maps;
+	(void)total_samples;
+	(void)ring_capacity;
 	(void)maps_json_buf; (void)maps_json_size;
 	return -ENOSYS;
 }
@@ -871,15 +929,17 @@ type aggregateTestCase struct {
 }
 
 type aggregateResult struct {
-	name     string
-	binary   string
-	mode     string
-	pid      int
-	status   string
-	exitCode int
-	command  string
-	detail   string
-	mapsJSON string
+	name             string
+	binary           string
+	mode             string
+	pid              int
+	status           string
+	exitCode         int
+	command          string
+	detail           string
+	mapsJSON         string
+	socketsCollected *uint64
+	socketRingSlots  *uint64
 }
 
 type aggregateState struct {
@@ -985,6 +1045,12 @@ func writeResult(out io.Writer, result aggregateResult, first *bool) {
 	jsonWriteString(out, result.command)
 	_, _ = io.WriteString(out, ",\n      \"detail\": ")
 	jsonWriteString(out, result.detail)
+	if result.socketsCollected != nil {
+		_, _ = fmt.Fprintf(out, ",\n      \"sockets_collected\": %d", *result.socketsCollected)
+	}
+	if result.socketRingSlots != nil {
+		_, _ = fmt.Fprintf(out, ",\n      \"socket_ring_slots\": %d", *result.socketRingSlots)
+	}
 	if result.mapsJSON != "" {
 		_, _ = fmt.Fprintf(out, ",\n      \"maps\": {\n%s\n      }", result.mapsJSON)
 	}
@@ -1097,6 +1163,8 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	skipped := C.int(0)
 	maps := C.int(0)
 	ringMaps := C.int(0)
+	totalSamples := C.size_t(0)
+	ringCapacity := C.size_t(0)
 	var mapsBuf [4096]C.char
 	errCode := int(C.netdata_core_run_buffer_skel_test(
 		cName,
@@ -1109,6 +1177,8 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		&ringMaps,
 		&mapsBuf[0],
 		C.int(len(mapsBuf)),
+		&totalSamples,
+		&ringCapacity,
 	))
 	mapsJSON := C.GoString(&mapsBuf[0])
 	if errCode != 0 {
@@ -1122,6 +1192,14 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
 		int(attached), int(skipped), int(maps), int(ringMaps))
+	if test.name == "socket" {
+		collected := uint64(totalSamples)
+		capacity := uint64(ringCapacity)
+		result.socketsCollected = &collected
+		result.socketRingSlots = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring slots used: %d/%d.",
+			result.detail, collected, collected, capacity)
+	}
 	result.mapsJSON = mapsJSON
 	return result, 0
 }
@@ -1143,7 +1221,7 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 
 	if C.netdata_core_arena_supported() == 0 {
 		result.status = "Unavailable"
-		result.detail = "Arena collection requires kernel >= 6.9."
+		result.detail = "Arena collection requires kernel >= 6.13 for verifier compatibility."
 		return result, 0
 	}
 
@@ -1164,6 +1242,8 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	skipped := C.int(0)
 	maps := C.int(0)
 	ringMaps := C.int(0)
+	totalSamples := C.size_t(0)
+	ringCapacity := C.size_t(0)
 	var mapsBuf [4096]C.char
 	errCode := int(C.netdata_core_run_arena_skel_test(
 		cName,
@@ -1176,6 +1256,8 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 		&ringMaps,
 		&mapsBuf[0],
 		C.int(len(mapsBuf)),
+		&totalSamples,
+		&ringCapacity,
 	))
 	mapsJSON := C.GoString(&mapsBuf[0])
 	if errCode != 0 {
@@ -1189,6 +1271,14 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 	result.status = "Success"
 	result.detail = fmt.Sprintf("Loaded object, attached %d programs, skipped %d socket filters, checked %d maps and %d ring buffers.",
 		int(attached), int(skipped), int(maps), int(ringMaps))
+	if test.name == "socket" {
+		collected := uint64(totalSamples)
+		capacity := uint64(ringCapacity)
+		result.socketsCollected = &collected
+		result.socketRingSlots = &capacity
+		result.detail = fmt.Sprintf("%s Collected %d sockets during runtime. Socket ring slots used: %d/%d.",
+			result.detail, collected, collected, capacity)
+	}
 	result.mapsJSON = mapsJSON
 	return result, 0
 }
@@ -1213,6 +1303,7 @@ func printHelp(out io.Writer, name string) {
 			"  --sync --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"+
 			"\n"+
 			"Notes:\n"+
+			"  - --buffer and --arena may be combined; buffers run before arenas.\n"+
 			"  - --all excludes filesystem coverage: nfs, ext4, btrfs, xfs, and zfs.\n"+
 			"  - --filesystem expands to --nfs --ext4 --btrfs --xfs.\n"+
 			"  - zfs is reported as unavailable because this repository does not generate\n"+
@@ -1332,9 +1423,6 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			state.selectionMask |= selectAllNonFilesystem
 			state.explicitSelection = true
 		case "arena":
-			if state.bufferMode {
-				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
-			}
 			state.arenaMode = true
 		case "cachestat":
 			state.selectionMask |= selectCachestat
@@ -1406,9 +1494,6 @@ func parseArgs(args []string) (aggregateState, string, bool, error) {
 			state.selectionMask |= selectZFS
 			state.explicitSelection = true
 		case "buffer":
-			if state.arenaMode {
-				return state, logPath, false, fmt.Errorf("--buffer and --arena are mutually exclusive")
-			}
 			state.bufferMode = true
 		default:
 			return state, logPath, false, fmt.Errorf("unrecognized option '--%s'", option)
@@ -1454,93 +1539,110 @@ func main() {
 	failures := 0
 	unavailable := 0
 
-	for _, test := range aggregateTests {
-		if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
-			continue
-		}
+	phaseCount := 0
+	if state.bufferMode {
+		phaseCount++
+	}
+	if state.arenaMode {
+		phaseCount++
+	}
+	if phaseCount == 0 {
+		phaseCount = 1
+	}
 
-		if state.bufferMode {
-			if !test.bufferSupported {
+	// Combined mode deliberately has two complete passes: buffers, then arenas.
+	for phase := 0; phase < phaseCount; phase++ {
+		runBuffer := state.bufferMode && phase == 0
+		runArena := state.arenaMode && (!state.bufferMode || phase == 1)
+
+		for _, test := range aggregateTests {
+			if state.explicitSelection && (state.selectionMask&test.selectionBit) == 0 {
 				continue
 			}
 
-			result, exitCode := executeBufferTest(state, test)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		if state.arenaMode {
-			if !test.arenaSupported {
-				continue
-			}
-
-			result, exitCode := executeArenaTest(state, test)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		if test.unavailableReason != "" {
-			result := recordUnavailable(test, test.unavailableReason)
-			writeResult(report, result, &first)
-			resultCount++
-			unavailable++
-			continue
-		}
-
-		if test.modes == modeNone {
-			result, exitCode := executeTest(state, test, modeNone, -1)
-			if exitCode != 0 {
-				failures++
-			}
-			writeResult(report, result, &first)
-			resultCount++
-			continue
-		}
-
-		orderedModes := []uint{modeProbe, modeTracepoint, modeTrampoline}
-		for _, mode := range orderedModes {
-			if test.modes&mode == 0 {
-				continue
-			}
-
-			pidStart := -1
-			pidEnd := -1
-			if test.pidSupported {
-				if state.selectedPID >= 0 {
-					pidStart = state.selectedPID
-					pidEnd = state.selectedPID
-				} else {
-					pidStart = pidMin
-					pidEnd = pidMax
+			if runBuffer {
+				if !test.bufferSupported {
+					continue
 				}
+
+				result, exitCode := executeBufferTest(state, test)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
 			}
 
-			if pidStart >= 0 {
-				for pid := pidStart; pid <= pidEnd; pid++ {
-					result, exitCode := executeTest(state, test, mode, pid)
-					if exitCode != 0 {
-						failures++
+			if runArena {
+				if !test.arenaSupported {
+					continue
+				}
+
+				result, exitCode := executeArenaTest(state, test)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
+			}
+
+			if test.unavailableReason != "" {
+				result := recordUnavailable(test, test.unavailableReason)
+				writeResult(report, result, &first)
+				resultCount++
+				unavailable++
+				continue
+			}
+
+			if test.modes == modeNone {
+				result, exitCode := executeTest(state, test, modeNone, -1)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
+				continue
+			}
+
+			orderedModes := []uint{modeProbe, modeTracepoint, modeTrampoline}
+			for _, mode := range orderedModes {
+				if test.modes&mode == 0 {
+					continue
+				}
+
+				pidStart := -1
+				pidEnd := -1
+				if test.pidSupported {
+					if state.selectedPID >= 0 {
+						pidStart = state.selectedPID
+						pidEnd = state.selectedPID
+					} else {
+						pidStart = pidMin
+						pidEnd = pidMax
 					}
-					writeResult(report, result, &first)
-					resultCount++
 				}
-				continue
-			}
 
-			result, exitCode := executeTest(state, test, mode, -1)
-			if exitCode != 0 {
-				failures++
+				if pidStart >= 0 {
+					for pid := pidStart; pid <= pidEnd; pid++ {
+						result, exitCode := executeTest(state, test, mode, pid)
+						if exitCode != 0 {
+							failures++
+						}
+						writeResult(report, result, &first)
+						resultCount++
+					}
+					continue
+				}
+
+				result, exitCode := executeTest(state, test, mode, -1)
+				if exitCode != 0 {
+					failures++
+				}
+				writeResult(report, result, &first)
+				resultCount++
 			}
-			writeResult(report, result, &first)
-			resultCount++
 		}
 	}
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef _NETDATA_SOCKET_ARENA_H_
 #define _NETDATA_SOCKET_ARENA_H_ 1
 
@@ -6,4 +8,4 @@
 
 NETDATA_ARENA_QUEUE_DECL(socket, struct netdata_socket_event_t, NETDATA_ARENA_EVENT_SLOTS);
 
-#endif
+#endif /* _NETDATA_SOCKET_ARENA_H_ */

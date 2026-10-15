@@ -3,10 +3,10 @@
 set -e
 
 build() {
-  echo "[XXX]: Building against Kernel 5.15 for libc ${_LIBC} ..."
+  echo "[XXX]: Building against Kernel ${LOCAL_KERNEL_VERSION} for libc ${_LIBC} ..."
   (
-    cd co-re
-    make CC=clang
+    cd /ebpf-co-re
+    make CC=clang KERNEL_VERSION="${LOCAL_KERNEL_VERSION}"
   ) || return 1
 }
 

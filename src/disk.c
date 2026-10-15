@@ -77,11 +77,6 @@ static int disk_attach_request_probes(struct disk_bpf *obj, disk_attach_links_t 
         err = disk_attach_target(links, issue, "blk_mq_start_request");
         if (err)
             return err;
-        if (have_legacy_start) {
-            err = disk_attach_target(links, issue, "blk_start_request");
-            if (err)
-                return err;
-        }
     } else if (have_legacy_start) {
         err = disk_attach_target(links, issue, "blk_start_request");
         if (err)
