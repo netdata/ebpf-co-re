@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := all
+
 LIBBPF = ../libbpf
 LIBBPF_ARTIFACT = ../.local_libbpf/libbpf.a
 CFLAGS = -Wall -ggdb
@@ -11,7 +13,6 @@ ARCH := $(shell uname -m | sed 's/x86_64/x86/')
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 				 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }') 
 KERNEL_VERSION="$(shell cat /proc/sys/kernel/osrelease)"
-FIRST_KERNEL_VERSION=$(shell sh ../kernel-collector/tools/complement.sh "$(KERNEL_VERSION)")
 VER_MAJOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f1)
 VER_MINOR=$(shell echo $(KERNEL_VERSION) | cut -d. -f2)
 VER_PATCH=$(shell echo $(KERNEL_VERSION) | cut -d. -f3 | cut -d\- -f1)

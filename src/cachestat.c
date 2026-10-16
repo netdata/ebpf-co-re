@@ -199,7 +199,7 @@ static pid_t ebpf_update_tables(int global, int apps)
     uint32_t idx = 0;
     uint64_t value = 1;
 
-    int ret = bpf_map_update_elem(global, &idx, &value, 0);
+    int ret = netdata_core_update_test_map(global, &idx, &value, sizeof(value), 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to global table.");
 
@@ -207,7 +207,7 @@ static pid_t ebpf_update_tables(int global, int apps)
                                   .account_page_dirtied = 1, .mark_buffer_dirty = 1 };
 
     idx = (pid_t)pid;
-    ret = bpf_map_update_elem(apps, &idx, &stats, 0);
+    ret = netdata_core_update_test_map(apps, &idx, &stats, sizeof(stats), 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to apps table.");
 
@@ -243,9 +243,9 @@ static int cachestat_read_apps_array(int fd, int ebpf_nprocs, uint32_t child)
 static int ebpf_cachestat_tests(int selector, enum netdata_apps_level map_level)
 {
     struct cachestat_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = cachestat_bpf__open();
     if (!obj) {

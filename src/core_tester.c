@@ -1142,7 +1142,7 @@ static void print_help(const char *name)
             "  --all             Run all non-filesystem CO-RE tests. This is the default.\n"
             "  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"
             "  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"
-            "  --iteration N     Forward the capture iteration count to the DNS tester.\n"
+            "  --iteration N     DNS keeps a fixed 5-second capture (deprecated there); buffer/arena runs use N loops.\n"
             "  --tests-dir PATH  Accepted for compatibility and ignored in standalone mode.\n"
             "  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"
             "  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"
@@ -1377,7 +1377,7 @@ int main(int argc, char **argv)
             int run_arena = state.arena_mode && (!state.buffer_mode || phase == 1);
 
             for (i = 0; i < sizeof(aggregate_tests) / sizeof(aggregate_tests[0]); i++) {
-        const aggregate_test_case_t *test = &aggregate_tests[i];
+                const aggregate_test_case_t *test = &aggregate_tests[i];
 
         if (state.explicit_selection && !(state.selection_mask & test->selection_bit))
             continue;

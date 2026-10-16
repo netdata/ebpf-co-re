@@ -122,6 +122,7 @@ static const struct netdata_core_buffer_skel_ops *netdata_core_find_buffer_skel_
 #include "netdata_socket_arena.h"
 #include "netdata_oomkill_arena.h"
 #include "netdata_process_arena.h"
+#include "netdata_socket_arena.h"
 #include "netdata_shm_arena.h"
 #include "netdata_swap_arena.h"
 #include "netdata_vfs_arena.h"
@@ -150,6 +151,7 @@ DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dns_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fd_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(oomkill_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(process_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(socket_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(shm_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(swap_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(vfs_arena);
@@ -1289,7 +1291,7 @@ func printHelp(out io.Writer, name string) {
 			"  --all             Run all non-filesystem CO-RE tests. This is the default.\n"+
 			"  --pid VALUE       Run PID-aware tests with a single PID level (0-3).\n"+
 			"  --dns-port LIST   Forward a comma-separated DNS port list to the DNS tester.\n"+
-			"  --iteration N     Forward the capture iteration count to the DNS tester.\n"+
+			"  --iteration N     DNS keeps a fixed 5-second capture (deprecated there); buffer/arena runs use N loops.\n"+
 			"  --tests-dir PATH  Accepted for compatibility and ignored in in-process mode.\n"+
 			"  --log-path FILE   Write the aggregate JSON summary to FILE instead of stdout.\n"+
 			"  --buffer          Test CO-RE ring-buffer BPF objects instead of standalone loaders.\n"+

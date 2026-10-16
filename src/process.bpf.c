@@ -111,24 +111,20 @@ static __always_inline int netdata_common_fork_clone(int ret)
 
 static __always_inline int netdata_common_wake_up_new_task(struct task_struct *child)
 {
+    __u32 child_pid = 0;
+    __u32 child_tgid = 0;
     struct netdata_pid_stat_t data = { };
     struct netdata_pid_stat_t *fill;
     __u32 key = 0;
     __u32 tgid = 0;
-    __u32 child_pid = 0;
-    __u32 child_tgid = 0;
 
-    if (!child)
-        return 0;
-
-    /* pid == tgid identifies a process; a thread has a distinct task ID. */
-    if (BPF_CORE_READ_INTO(&child_pid, child, pid) ||
+    if (!child || BPF_CORE_READ_INTO(&child_pid, child, pid) ||
         BPF_CORE_READ_INTO(&child_tgid, child, tgid))
         return 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
 
-    int thread = (child_pid != child_tgid) ? 1 : 0;
+    int thread = (child_pid != child_tgid);
     if (thread)
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);
 
@@ -154,14 +150,6 @@ static __always_inline int netdata_common_wake_up_new_task(struct task_struct *c
     }
 
     return 0;
-}
-
-SEC("tp_btf/sched_process_fork")
-int BPF_PROG(netdata_sched_process_fork_btf, struct task_struct *parent,
-             struct task_struct *child)
-{
-    (void)parent;
-    return netdata_common_wake_up_new_task(child);
 }
 
 
@@ -221,6 +209,14 @@ int netdata_tracepoint_sched_process_exec(struct netdata_sched_process_exec *ptr
     return 0;
 }
 
+// Keep fork accounting independent of the tracepoint's versioned event layout.
+SEC("kprobe/wake_up_new_task")
+int netdata_wake_up_new_task(struct pt_regs *ctx)
+{
+    struct task_struct *child = (struct task_struct *)PT_REGS_PARM1(ctx);
+    return netdata_common_wake_up_new_task(child);
+}
+
 SEC("tracepoint/syscalls/sys_exit_clone")
 int netdata_clone_exit(struct trace_event_raw_sys_exit *ctx)
 {
@@ -259,13 +255,6 @@ SEC("kprobe/release_task")
 int BPF_KPROBE(netdata_release_task_probe)
 {
     return netdata_common_release_task();
-}
-
-SEC("kprobe/wake_up_new_task")
-int BPF_KPROBE(netdata_wake_up_new_task_probe)
-{
-    struct task_struct *child = (struct task_struct *)PT_REGS_PARM1(ctx);
-    return netdata_common_wake_up_new_task(child);
 }
 
 // Must be disabled on user ring when kernel is newer than 5.9.16

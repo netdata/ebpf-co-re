@@ -55,15 +55,16 @@ When all compilation is finished, the `skel.c` files are stored inside `includes
 
 ## Running CO-RE tests
 
-After `make`, the per-module CO-RE testers, the aggregate C tester, and the aggregate Go tester are stored under `src/tests/`.
+After `make`, use the repository root `tests.sh` to run the aggregate C and Go testers. It passes test arguments to both implementations by default; `--backend c` or `--backend go` selects one implementation.
 
 ```sh
-cd src/tests
-./core_tester
-./core_tester_go
+./tests.sh
+./tests.sh --process --pid 2
+./tests.sh --backend c --buffer --socket --iteration 1
+./tests.sh --backend both --arena --all
 ```
 
-Both aggregate testers execute the linked CO-RE test entrypoints in-process and write a JSON summary to stdout. Use `./core_tester --help` or `./core_tester_go --help` to run a subset of modules or override options such as `--pid`, `--dns-port`, `--iteration`, and `--arena`.
+The aggregate testers execute linked CO-RE test entrypoints in-process and produce a JSON summary. Test options such as module selectors, `--pid`, `--dns-port`, `--iteration`, `--buffer`, and `--arena` are forwarded. `--log-path FILE` writes separate reports for C and Go when both backends run. Use `./tests.sh --help` for runner options and `./src/tests/core_tester --help` for tester options.
 
 `./core_tester_go` is built from `src/core_tester_go/core_tester.go` and uses CGO plus `netdata_core_loader.{c,h}` to call the renamed C test entrypoints directly. It does not spawn `src/tests/<module>` binaries. `--tests-dir` is used to locate `*_arena.bpf.o` files when arena mode is enabled.
 

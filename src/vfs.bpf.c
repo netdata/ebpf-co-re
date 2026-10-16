@@ -322,10 +322,8 @@ int BPF_KPROBE(netdata_vfs_write_kprobe)
 SEC("kretprobe/vfs_write")
 int BPF_KRETPROBE(netdata_vfs_write_kretprobe)
 {
-    ssize_t ret = (ssize_t)PT_REGS_PARM3(ctx);
-    __u64 tot = libnetdata_log2l(ret);
-
-    ret = (ssize_t)PT_REGS_RC(ctx);
+    ssize_t ret = (ssize_t)PT_REGS_RC(ctx);
+    __u64 tot = libnetdata_log2l(ret > 0 ? ret : 0);
 
     return netdata_common_vfs_write(tot, ret);
 }
@@ -342,10 +340,8 @@ int BPF_KPROBE(netdata_vfs_writev_kprobe)
 SEC("kretprobe/vfs_writev")
 int BPF_KRETPROBE(netdata_vfs_writev_kretprobe)
 {
-    ssize_t ret = (ssize_t)PT_REGS_PARM3(ctx);
-    __u64 tot = libnetdata_log2l(ret);
-
-    ret = (ssize_t)PT_REGS_RC(ctx);
+    ssize_t ret = (ssize_t)PT_REGS_RC(ctx);
+    __u64 tot = libnetdata_log2l(ret > 0 ? ret : 0);
 
     return netdata_common_vfs_writev(tot, ret);
 }
@@ -362,10 +358,8 @@ int BPF_KPROBE(netdata_vfs_read_kprobe)
 SEC("kretprobe/vfs_read")
 int BPF_KRETPROBE(netdata_vfs_read_kretprobe)
 {
-    ssize_t ret = (ssize_t)PT_REGS_PARM3(ctx);
-    __u64 tot = libnetdata_log2l(ret);
-
-    ret = (ssize_t)PT_REGS_RC(ctx);
+    ssize_t ret = (ssize_t)PT_REGS_RC(ctx);
+    __u64 tot = libnetdata_log2l(ret > 0 ? ret : 0);
 
     return netdata_common_vfs_read(tot, ret);
 }
@@ -382,10 +376,8 @@ int BPF_KPROBE(netdata_vfs_readv_kprobe)
 SEC("kretprobe/vfs_readv")
 int BPF_KRETPROBE(netdata_vfs_readv_kretprobe)
 {
-    ssize_t ret = (ssize_t)PT_REGS_PARM3(ctx);
-    __u64 tot = libnetdata_log2l(ret);
-
-    ret = (ssize_t)PT_REGS_RC(ctx);
+    ssize_t ret = (ssize_t)PT_REGS_RC(ctx);
+    __u64 tot = libnetdata_log2l(ret > 0 ? ret : 0);
 
     return netdata_common_vfs_readv(tot, ret);
 }

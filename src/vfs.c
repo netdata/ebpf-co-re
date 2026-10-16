@@ -285,7 +285,7 @@ static int vfs_read_apps_array(int fd, int ebpf_nprocs, uint32_t my_pid)
 
 static pid_t ebpf_update_tables(int global, int apps)
 {
-    pid_t pid = ebpf_fill_global(global);
+    pid_t pid = ebpf_core_fill_global(global);
 
     struct netdata_vfs_stat_t stats = { .ct = 0, .name = "vfs", .write_call = 1,
                                         .writev_call = 1, .read_call = 1, .readv_call = 1, .unlink_call = 1,
@@ -296,7 +296,7 @@ static pid_t ebpf_update_tables(int global, int apps)
 
     uint32_t idx;
     for (idx = 0 ; idx < NETDATA_EBPF_CORE_MIN_STORE; idx++) {
-        int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
+        int ret = netdata_core_update_test_map(apps, &idx, &stats, sizeof(stats), 0);
         if (ret) {
             fprintf(stderr, "Cannot insert value to global table.");
             break;
@@ -309,9 +309,9 @@ static pid_t ebpf_update_tables(int global, int apps)
 static int ebpf_vfs_tests(int selector, enum netdata_apps_level map_level)
 {
     struct vfs_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = vfs_bpf__open();
     if (!obj) {

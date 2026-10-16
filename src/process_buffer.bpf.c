@@ -123,22 +123,18 @@ int netdata_tracepoint_sched_process_exec_buffer(struct netdata_sched_process_ex
     return 0;
 }
 
-SEC("tp_btf/sched_process_fork")
-int BPF_PROG(netdata_sched_process_fork_buffer, struct task_struct *parent,
-             struct task_struct *child)
+SEC("kprobe/wake_up_new_task")
+int netdata_wake_up_new_task_buffer(struct pt_regs *ctx)
 {
+    struct task_struct *child = (struct task_struct *)PT_REGS_PARM1(ctx);
     __u32 child_pid = 0;
     __u32 child_tgid = 0;
 
-    (void)parent;
-
-    if (!child ||
-        BPF_CORE_READ_INTO(&child_pid, child, pid) ||
+    if (!child || BPF_CORE_READ_INTO(&child_pid, child, pid) ||
         BPF_CORE_READ_INTO(&child_tgid, child, tgid))
         return 0;
 
     libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_PROCESS, 1);
-
     __u8 is_thread = (child_pid != child_tgid) ? 1 : 0;
     if (is_thread)
         libnetdata_update_global(&tbl_total_stats, NETDATA_KEY_CALLS_THREAD, 1);

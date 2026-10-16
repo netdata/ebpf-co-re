@@ -117,12 +117,12 @@ static int dc_read_apps_array(int fd, int ebpf_nprocs)
 
 static pid_t ebpf_update_tables(int global, int apps)
 {
-    pid_t pid = ebpf_fill_global(global);
+    pid_t pid = ebpf_core_fill_global(global);
 
     netdata_dc_stat_t stats = { .references = 1, .slow = 1, .missed = 1};
 
     uint32_t idx = (uint32_t)pid;
-    int ret = bpf_map_update_elem(apps, &idx, &stats, 0);
+    int ret = netdata_core_update_test_map(apps, &idx, &stats, sizeof(stats), 0);
     if (ret)
         fprintf(stderr, "Cannot insert value to apps table.");
 
@@ -132,9 +132,9 @@ static pid_t ebpf_update_tables(int global, int apps)
 static int ebpf_dc_tests(int selector, enum netdata_apps_level map_level)
 {
     struct dc_bpf *obj = NULL;
-    int ebpf_nprocs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (ebpf_nprocs < 0)
-        ebpf_nprocs = NETDATA_CORE_PROCESS_NUMBER;
+    int ebpf_nprocs = libbpf_num_possible_cpus();
+    if (ebpf_nprocs <= 0)
+        return 2;
 
     obj = dc_bpf__open();
     if (!obj) {
