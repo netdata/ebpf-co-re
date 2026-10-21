@@ -71,54 +71,50 @@ static int disk_attach_request_probes(struct disk_bpf *obj, disk_attach_links_t 
     int have_end = disk_symbol_in_kallsyms("blk_mq_end_request");
     int have_internal_end = disk_symbol_in_kallsyms("__blk_mq_end_request");
     int have_free = disk_symbol_in_kallsyms("blk_mq_free_request");
-    int err;
+    int issue_attached = 0;
+    int completion_attached = 0;
+    int secondary_attached = 0;
+    int err = -ENOENT;
+    int completion_error = -ENOENT;
 
     if (have_start) {
         err = disk_attach_target(links, issue, "blk_mq_start_request");
-        if (err)
-            return err;
-    } else if (have_legacy_start) {
-        err = disk_attach_target(links, issue, "blk_start_request");
-        if (err)
-            return err;
-    } else {
-        return -ENOENT;
+        issue_attached = !err;
     }
+    if (!issue_attached && have_legacy_start) {
+        err = disk_attach_target(links, issue, "blk_start_request");
+        issue_attached = !err;
+    }
+    if (!issue_attached)
+        return err;
 
     if (have_end) {
-        err = disk_attach_target(links, complete, "blk_mq_end_request");
-        if (err)
-            return err;
-        if (have_internal_end) {
-            err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_internal,
-                                     "__blk_mq_end_request");
-            if (err)
-                return err;
-        } else if (have_free) {
-            err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_free,
-                                     "blk_mq_free_request");
-            if (err)
-                return err;
-        }
-    } else if (have_internal_end) {
+        completion_error = disk_attach_target(links, complete, "blk_mq_end_request");
+        completion_attached = !completion_error;
+    }
+    if (have_internal_end) {
         err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_internal,
                                  "__blk_mq_end_request");
+        secondary_attached = !err;
         if (err)
-            return err;
-    } else if (have_free) {
+            completion_error = err;
+    }
+    if (!secondary_attached && have_free) {
         err = disk_attach_target(links, obj->progs.netdata_block_rq_complete_free,
                                  "blk_mq_free_request");
+        secondary_attached = !err;
         if (err)
-            return err;
-    } else {
-        return -ENOENT;
+            completion_error = err;
     }
+    // SCSI can bypass the primary path, but a working primary still collects other disks.
+    if (!completion_attached && !secondary_attached)
+        return completion_error;
+    if (!secondary_attached)
+        fprintf(stderr, "Disk secondary completion probes unavailable; some device latency may be missed\n");
 
     if (disk_symbol_in_kallsyms("blk_complete_request")) {
-        err = disk_attach_target(links, obj->progs.netdata_blk_complete_request,
+        (void)disk_attach_target(links, obj->progs.netdata_blk_complete_request,
                                  "blk_complete_request");
-        if (err)
-            return err;
     }
 
     return 0;
