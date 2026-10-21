@@ -302,8 +302,8 @@ static inline void fill_cachestat_fcnt()
     static const char *const access_candidates[] = {"folio_mark_accessed", "mark_page_accessed"};
     char line[256], symbol[192], type;
     FILE *fp = fopen("/proc/kallsyms", "r");
-    bool cache_folio_found = false, cache_legacy_found = false;
-    bool access_folio_found = false, access_legacy_found = false;
+    bool cache_folio_found = false;
+    bool access_folio_found = false;
 
     if (fp) {
         while (fgets(line, sizeof(line), fp)) {
@@ -311,9 +311,7 @@ static inline void fill_cachestat_fcnt()
                 (type != 'T' && type != 't' && type != 'W' && type != 'w'))
                 continue;
             cache_folio_found |= !strcmp(symbol, cache_candidates[0]);
-            cache_legacy_found |= !strcmp(symbol, cache_candidates[1]);
             access_folio_found |= !strcmp(symbol, access_candidates[0]);
-            access_legacy_found |= !strcmp(symbol, access_candidates[1]);
         }
         fclose(fp);
     }
