@@ -43,7 +43,15 @@ The code division for `CO-RE` code (`bpf.c`) is the same used for [legacy code](
 
 ## Headers
 
-By default `eBPF CO-RE` code needs a header generated with the following `bpftool` command:
+All BPF programs use the pinned `../includes/vmlinux.h` x86_64 type snapshot. It is sourced from
+[`libbpf/vmlinux.h`](https://github.com/libbpf/vmlinux.h/blob/c32912840154a82205530cd6d498b346ac73a6d1/include/x86_64/vmlinux_6.19.h)
+at commit `c32912840154a82205530cd6d498b346ac73a6d1`; its SHA-256 is
+`0b19715a3b9d5b3488fe6ade51c4d889d15a322f893ccd13ec030b8f59265df2`.
+Pin and review a replacement snapshot before changing this file. A generated header supplies compile-time type
+declarations; libbpf uses the target kernel's BTF for CO-RE relocations at load time. Changes to probe targets,
+function signatures, or available BPF helpers still need their own compatibility handling.
+
+For a kernel whose BTF is available locally, a header can be generated with:
 
 ```sh
 # bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h

@@ -34,8 +34,6 @@ enum NETDATA_EBPF_CORE_IDX {
 
 #define NETDATA_EBPF_CORE_MIN_STORE 128
 
-#define NETDATA_EBPF_KERNEL_5_19_0 332544
-
 #define NETDATA_CORE_PROCESS_NUMBER 4096
 
 static inline int netdata_core_update_test_map(int fd, const void *key, const void *value,
