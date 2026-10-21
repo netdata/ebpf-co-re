@@ -15,6 +15,11 @@
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 
+static inline int netdata_core_trampoline_available(void)
+{
+    return libbpf_probe_bpf_prog_type(BPF_PROG_TYPE_TRACING, NULL) > 0;
+}
+
 #ifndef TASK_COMM_LEN
 #define TASK_COMM_LEN 16
 #endif

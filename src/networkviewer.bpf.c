@@ -498,6 +498,12 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
 SEC("fexit/inet_csk_accept")
 int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
 {
+    __u64 result = 0;
+    if (bpf_get_func_ret(ctx, &result) || result == 0 ||
+        ((__s64)result < 0 && (__s64)result >= -4095))
+        return 0;
+    sk = (struct sock *)result;
+
     if (!am_i_monitoring_protocol(sk))
         return 0;
 
