@@ -1,6 +1,7 @@
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
+#include "bpf_core_read.h"
 
 #include "netdata_core.h"
 #include "netdata_mdflush.h"
@@ -22,6 +23,13 @@
 // Like the previous value is not changing between versions
 /* 63 partitions with the alternate major number (mdp) */
 #define Netdata_MdpMinorShift 6
+
+// The pinned BTF snapshot omits mddev; CO-RE matches this flavored view when MD is present.
+struct mddev;
+
+struct mddev___netdata {
+    dev_t unit;
+} __attribute__((preserve_access_index));
 
 /************************************************************************************
  *
@@ -50,7 +58,8 @@ static __always_inline int netdata_md_common(struct mddev *mddev)
     // get correct key.
     // this essentially does the logic here:
     // https://elixir.bootlin.com/linux/v4.14/source/drivers/md/md.c#L5256
-    bpf_probe_read(&key, sizeof(key), &mddev->unit);
+    if (BPF_CORE_READ_INTO(&key, (struct mddev___netdata *)mddev, unit))
+        return 0;
     int partitioned = (NETDATA_MAJOR(key) != NETDATA_MD_MAJOR);
     int shift = partitioned ? Netdata_MdpMinorShift : 0;
     key = NETDATA_MINOR(key) >> shift;

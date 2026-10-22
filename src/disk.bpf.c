@@ -1,4 +1,4 @@
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 #include "bpf_core_read.h"
@@ -6,8 +6,23 @@
 #include "netdata_core.h"
 #include "netdata_disk.h"
 
+// The pinned BTF snapshot omits request; CO-RE matches this flavored view on target kernels.
+struct request___netdata {
+    struct request_queue *q;
+    struct gendisk *rq_disk;
+    sector_t __sector;
+} __attribute__((preserve_access_index));
+
 struct request_queue___new {
     struct gendisk *disk;
+} __attribute__((preserve_access_index));
+
+struct gendisk___old {
+    struct {
+        struct {
+            dev_t devt;
+        } __dev;
+    } part0;
 } __attribute__((preserve_access_index));
 
 struct gendisk___new {
@@ -41,17 +56,18 @@ struct {
 
 static __always_inline int netdata_disk_request_key(struct request *rq, netdata_disk_key_t *key)
 {
+    struct request___netdata *request = (struct request___netdata *)rq;
     struct gendisk *disk = NULL;
 
     if (!rq)
         return 0;
 
-    if (bpf_core_field_exists(((struct request *)0)->rq_disk)) {
-        if (BPF_CORE_READ_INTO(&disk, rq, rq_disk))
+    if (bpf_core_field_exists(request->rq_disk)) {
+        if (BPF_CORE_READ_INTO(&disk, request, rq_disk))
             return 0;
     } else {
         struct request_queue *queue = NULL;
-        if (BPF_CORE_READ_INTO(&queue, rq, q) || !queue ||
+        if (BPF_CORE_READ_INTO(&queue, request, q) || !queue ||
             BPF_CORE_READ_INTO(&disk, (struct request_queue___new *)queue, disk))
             return 0;
     }
@@ -62,8 +78,8 @@ static __always_inline int netdata_disk_request_key(struct request *rq, netdata_
     key->pad = 0;
     key->sector = 0;
 
-    if (bpf_core_field_exists(((struct gendisk *)0)->part0.__dev.devt)) {
-        if (BPF_CORE_READ_INTO(&key->dev, disk, part0.__dev.devt))
+    if (bpf_core_field_exists(((struct gendisk___old *)0)->part0.__dev.devt)) {
+        if (BPF_CORE_READ_INTO(&key->dev, (struct gendisk___old *)disk, part0.__dev.devt))
             return 0;
     } else {
         struct block_device___new *part = NULL;
@@ -72,7 +88,7 @@ static __always_inline int netdata_disk_request_key(struct request *rq, netdata_
             return 0;
     }
 
-    if (BPF_CORE_READ_INTO(&key->sector, rq, __sector))
+    if (BPF_CORE_READ_INTO(&key->sector, request, __sector))
         return 0;
     if ((s64)key->sector < 0)
         key->sector = 0;

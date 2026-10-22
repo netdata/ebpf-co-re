@@ -7,6 +7,8 @@ The respository has the following directory structure:
 - `artifacts`: directory that will have the eBPF programs when the compilation
   process ends.
 - `includes`: headers used to compile `eBPF.plugin`.
+- `includes/vmlinux.h`: pinned x86_64 kernel type snapshot used by every CO-RE program. Its source and checksum are
+  recorded in `src/DEVELOPER.md`. This compile-time snapshot does not replace the running kernel's BTF.
 - `kernel-collector`: this is a submodule'd fork of
   [netdata/libbpf](https://github.com/netdata/kernel-collector).
 - `libbpf`: this is a submodule'd fork of

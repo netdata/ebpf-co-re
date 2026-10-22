@@ -277,7 +277,7 @@ int main(int argc, char **argv)
     };
 
     // use trampoline as default
-    int selector = NETDATA_MODE_TRAMPOLINE;
+    int selector = netdata_core_trampoline_available() ? NETDATA_MODE_TRAMPOLINE : NETDATA_MODE_PROBE;
     int option_index = 0;
     enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {

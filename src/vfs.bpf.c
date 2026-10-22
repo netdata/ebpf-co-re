@@ -1,4 +1,4 @@
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 
@@ -447,9 +447,11 @@ int BPF_KRETPROBE(netdata_vfs_create_kretprobe)
 SEC("fentry/vfs_write")
 int BPF_PROG(netdata_vfs_write_fentry, struct file *file, const char *buf, size_t count, loff_t *pos)
 {
-    __u64 tot = libnetdata_log2l((ssize_t)count);
-
-    return netdata_common_vfs_write(tot, 0);
+    (void)file;
+    (void)buf;
+    (void)count;
+    (void)pos;
+    return 0;
 }
 
 SEC("fexit/vfs_write")
@@ -467,13 +469,16 @@ int BPF_PROG(netdata_vfs_write_fexit, struct file *file, const char *buf, size_t
 SEC("fentry/vfs_writev")
 int BPF_PROG(netdata_vfs_writev_fentry, struct file *file, const char *buf, size_t count, loff_t *pos)
 {
-    __u64 tot = libnetdata_log2l((ssize_t)count);
-
-    return netdata_common_vfs_writev(tot, 0);
+    (void)file;
+    (void)buf;
+    (void)count;
+    (void)pos;
+    return 0;
 }
 
 SEC("fexit/vfs_writev")
-int BPF_PROG(netdata_vfs_writev_fexit, struct file *file, const char *buf, size_t count, loff_t *pos, ssize_t ret)
+int BPF_PROG(netdata_vfs_writev_fexit, struct file *file, const struct iovec *vec, unsigned long vlen,
+             loff_t *pos, rwf_t flags, ssize_t ret)
 {
     __u64 tot;
     if (ret > 0)
@@ -487,9 +492,11 @@ int BPF_PROG(netdata_vfs_writev_fexit, struct file *file, const char *buf, size_
 SEC("fentry/vfs_read")
 int BPF_PROG(netdata_vfs_read_fentry, struct file *file, const char *buf, size_t count, loff_t *pos)
 {
-    __u64 tot = libnetdata_log2l((ssize_t)count);
-
-    return netdata_common_vfs_read(tot, 0);
+    (void)file;
+    (void)buf;
+    (void)count;
+    (void)pos;
+    return 0;
 }
 
 SEC("fexit/vfs_read")
@@ -507,9 +514,12 @@ int BPF_PROG(netdata_vfs_read_fexit, struct file *file, const char *buf, size_t 
 SEC("fentry/vfs_readv")
 int BPF_PROG(netdata_vfs_readv_fentry, struct file *file, const struct iovec *vec, unsigned long vlen, loff_t *pos, rwf_t flags)
 {
-    __u64 tot = libnetdata_log2l((ssize_t) vlen);
-
-    return netdata_common_vfs_readv(tot, 0);
+    (void)file;
+    (void)vec;
+    (void)vlen;
+    (void)pos;
+    (void)flags;
+    return 0;
 }
 
 SEC("fexit/vfs_readv")
@@ -546,7 +556,7 @@ int BPF_PROG(netdata_vfs_unlink_fexit,struct inode *dir, struct dentry *dentry, 
 SEC("fentry/vfs_fsync")
 int BPF_PROG(netdata_vfs_fsync_fentry)
 {
-    return netdata_common_vfs_fsync(0);
+    return 0;
 }
 
 SEC("fexit/vfs_fsync")
@@ -558,7 +568,7 @@ int BPF_PROG(netdata_vfs_fsync_fexit, struct file *file, int datasync, int ret)
 SEC("fentry/vfs_open")
 int BPF_PROG(netdata_vfs_open_fentry)
 {
-    return netdata_common_vfs_open(0);
+    return 0;
 }
 
 SEC("fexit/vfs_open")

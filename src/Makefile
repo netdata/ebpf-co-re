@@ -101,8 +101,9 @@ libbpf: $(LIBBPF_ARTIFACT)
 $(LIBBPF_ARTIFACT):
 	cd $(LIBBPF)/src && $(MAKE) BUILD_STATIC_ONLY=1 DESTDIR=../../.local_libbpf INCLUDEDIR= LIBDIR= UAPIDIR= install \
 
+# Generated vmlinux.h contains anonymous forward declarations diagnosed by Clang.
 %.bpf.o: %.bpf.c libbpf
-	$(CLANG) -fno-stack-protector $(INCLUDES) -ggdb -O2 -target bpf $(BPF_CPU) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	$(CLANG) -fno-stack-protector -Wno-missing-declarations $(INCLUDES) -ggdb -O2 -target bpf $(BPF_CPU) -DMY_LINUX_VERSION_CODE=$(RUNNING_VERSION_CODE) -D__TARGET_ARCH_$(ARCH) -D__BPF_FEATURE_ADDR_SPACE_CAST $(CLANG_BPF_SYS_INCLUDES) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 %.skel.h: %.bpf.o

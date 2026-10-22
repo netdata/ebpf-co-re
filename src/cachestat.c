@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 #include <getopt.h>
 
 #include <linux/version.h>
@@ -296,6 +298,28 @@ load_error:
 
 static inline void fill_cachestat_fcnt()
 {
+    static const char *const cache_candidates[] = {"filemap_add_folio", "add_to_page_cache_lru"};
+    static const char *const access_candidates[] = {"folio_mark_accessed", "mark_page_accessed"};
+    char line[256], symbol[192], type;
+    FILE *fp = fopen("/proc/kallsyms", "r");
+    bool cache_folio_found = false;
+    bool access_folio_found = false;
+
+    if (fp) {
+        while (fgets(line, sizeof(line), fp)) {
+            if (sscanf(line, "%*s %c %191s", &type, symbol) != 2 ||
+                (type != 'T' && type != 't' && type != 'W' && type != 'w'))
+                continue;
+            cache_folio_found |= !strcmp(symbol, cache_candidates[0]);
+            access_folio_found |= !strcmp(symbol, access_candidates[0]);
+        }
+        fclose(fp);
+    }
+    cachestat_fcnt[NETDATA_KEY_CALLS_ADD_TO_PAGE_CACHE_LRU] =
+        (char *)(cache_folio_found ? cache_candidates[0] : cache_candidates[1]);
+    cachestat_fcnt[NETDATA_KEY_CALLS_MARK_PAGE_ACCESSED] =
+        (char *)(access_folio_found ? access_candidates[0] : access_candidates[1]);
+
     ebpf_update_names(cachestat_names);
     int i;
     for (i = 0; cachestat_names[i].program_name ; i++) {
@@ -317,7 +341,7 @@ int main(int argc, char **argv)
         {0,             no_argument, 0, 0}
     };
 
-    int selector = NETDATA_MODE_TRAMPOLINE;
+    int selector = netdata_core_trampoline_available() ? NETDATA_MODE_TRAMPOLINE : NETDATA_MODE_PROBE;
     int option_index = 0;
     enum netdata_apps_level map_level = NETDATA_APPS_LEVEL_REAL_PARENT;
     while (1) {

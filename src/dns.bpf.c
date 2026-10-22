@@ -1,8 +1,4 @@
-#if MY_LINUX_VERSION_CODE >= NETDATA_EBPF_KERNEL_5_19_0
-#include "vmlinux_519.h"
-#else
-#include "vmlinux_508.h"
-#endif
+#include "vmlinux.h"
 
 #include "bpf_endian.h"
 #include "bpf_helpers.h"

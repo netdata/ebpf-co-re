@@ -1,4 +1,4 @@
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 #include "bpf_core_read.h"
@@ -286,19 +286,15 @@ int BPF_PROG(netdata_release_task_fentry)
 }
 
 SEC("fexit/netdata_clone_fexit")
-int BPF_PROG(netdata_clone_fexit, const struct pt_regs *regs)
+int BPF_PROG(netdata_clone_fexit, const struct pt_regs *regs, long ret)
 {
-    int ret = (int)PT_REGS_RC(regs);
-
-    return netdata_common_fork_clone(ret);
+	return netdata_common_fork_clone((int)ret);
 }
 
 SEC("fexit/netdata_clone3_fexit")
-int BPF_PROG(netdata_clone3_fexit, const struct pt_regs *regs)
+int BPF_PROG(netdata_clone3_fexit, const struct pt_regs *regs, long ret)
 {
-    int ret = (int)PT_REGS_RC(regs);
-
-    return netdata_common_fork_clone(ret);
+	return netdata_common_fork_clone((int)ret);
 }
 
 char _license[] SEC("license") = "GPL";

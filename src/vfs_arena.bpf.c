@@ -1,6 +1,6 @@
 #define __BPF_FEATURE_ADDR_SPACE_CAST 1
 
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 #include "bpf_arena_compat.h"

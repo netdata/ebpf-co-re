@@ -15,6 +15,11 @@
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 
+static inline int netdata_core_trampoline_available(void)
+{
+    return libbpf_probe_bpf_prog_type(BPF_PROG_TYPE_TRACING, NULL) > 0;
+}
+
 #ifndef TASK_COMM_LEN
 #define TASK_COMM_LEN 16
 #endif
@@ -28,8 +33,6 @@ enum NETDATA_EBPF_CORE_IDX {
 };
 
 #define NETDATA_EBPF_CORE_MIN_STORE 128
-
-#define NETDATA_EBPF_KERNEL_5_19_0 332544
 
 #define NETDATA_CORE_PROCESS_NUMBER 4096
 

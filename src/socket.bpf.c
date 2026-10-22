@@ -1,8 +1,4 @@
-#if MY_LINUX_VERSION_CODE >= NETDATA_EBPF_KERNEL_5_19_0
-#include "vmlinux_519.h"
-#else
-#include "vmlinux_508.h"
-#endif
+#include "vmlinux.h"
 
 #include "bpf_tracing.h"
 #include "bpf_endian.h"
@@ -715,10 +711,12 @@ int BPF_KPROBE(netdata_udp_sendmsg_kprobe)
 SEC("fexit/inet_csk_accept")
 int BPF_PROG(netdata_inet_csk_accept_fexit, struct sock *sk)
 {
-    if (!sk)
+    __u64 result = 0;
+    if (bpf_get_func_ret(ctx, &result) || result == 0 ||
+        ((__s64)result < 0 && (__s64)result >= -4095))
         return 0;
 
-    return netdata_common_inet_csk_accept(sk);
+    return netdata_common_inet_csk_accept((struct sock *)result);
 }
 
 SEC("fexit/tcp_v4_connect")
@@ -805,7 +803,12 @@ int BPF_PROG(netdata_udp_recvmsg_fexit, struct sock *sk, struct msghdr *msg, int
     if (!sk)
         return 0;
 
-    return netdata_common_udp_recvmsg_return(sk, ret > 0 ? (__u64)ret : 0);
+    __u64 result = 0;
+    if (bpf_get_func_ret(ctx, &result))
+        return 0;
+
+    int received = (int)result;
+    return netdata_common_udp_recvmsg_return(sk, received > 0 ? (__u64)received : 0);
 }
 
 SEC("fexit/tcp_sendmsg")

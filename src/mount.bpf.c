@@ -1,4 +1,4 @@
-#include "vmlinux_508.h"
+#include "vmlinux.h"
 #include "bpf_tracing.h"
 #include "bpf_helpers.h"
 
@@ -105,10 +105,9 @@ int BPF_PROG(netdata_mount_fentry)
 }
 
 SEC("fexit/netdata_mount")
-int BPF_PROG(netdata_mount_fexit, const struct pt_regs *regs)
+int BPF_PROG(netdata_mount_fexit, const struct pt_regs *regs, long ret)
 {
-    int ret = (int)PT_REGS_RC(regs);
-    if (ret < 0)
+	if (ret < 0)
         libnetdata_update_global(&tbl_mount, NETDATA_KEY_MOUNT_ERROR, 1);
 
     return 0;
@@ -123,9 +122,8 @@ int BPF_PROG(netdata_umount_fentry)
 }
 
 SEC("fexit/netdata_umount")
-int BPF_PROG(netdata_umount_fexit, const struct pt_regs *regs)
+int BPF_PROG(netdata_umount_fexit, const struct pt_regs *regs, long ret)
 {
-    int ret = (int)PT_REGS_RC(regs);
     if (ret < 0)
         libnetdata_update_global(&tbl_mount, NETDATA_KEY_UMOUNT_ERROR, 1);
 

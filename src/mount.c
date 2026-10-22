@@ -224,7 +224,7 @@ int main(int argc, char **argv)
         {0, 0, 0, 0}
     };
 
-    int selector = 0;
+    int selector = netdata_core_trampoline_available() ? NETDATA_MODE_TRAMPOLINE : NETDATA_MODE_PROBE;
     int option_index = 0;
     while (1) {
         int c = getopt_long(argc, argv, "", long_options, &option_index);
