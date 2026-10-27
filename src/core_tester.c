@@ -704,6 +704,14 @@ static int test_ringbuf_map(struct bpf_map *map, int iterations,
 static int test_arena_map(struct bpf_map *map, int iterations,
                           char *map_json_buf, size_t map_json_size)
 {
+    enum { ARENA_QUEUE_SLOTS = 1024, ARENA_QUEUE_VERSION = 0x4e444151U };
+    struct arena_queue_header {
+        uint32_t head;
+        uint32_t tail;
+        uint32_t version;
+        uint32_t reserved;
+        uint64_t dropped;
+    };
     int fd = bpf_map__fd(map);
     uint32_t key_size = bpf_map__key_size(map);
     uint32_t value_size = bpf_map__value_size(map);
@@ -711,8 +719,12 @@ static int test_arena_map(struct bpf_map *map, int iterations,
     size_t data_sz = 0;
     /* arena is already mmap'd by libbpf at load time; MAP_FIXED + map_extra required */
     void *arena_mem = bpf_map__initial_value(map, &data_sz);
-    int setup_error = arena_mem ? 0 : -EINVAL;
-    uint32_t prev_head = 0;
+    struct arena_queue_header *queue = arena_mem;
+    size_t slot_stride = data_sz >= sizeof(*queue) ?
+        (data_sz - sizeof(*queue)) / ARENA_QUEUE_SLOTS : 0;
+    int setup_error = !queue || data_sz < sizeof(*queue) + ARENA_QUEUE_SLOTS * sizeof(uint32_t) ||
+                              (data_sz - sizeof(*queue)) % ARENA_QUEUE_SLOTS ||
+                              queue->version != ARENA_QUEUE_VERSION ? -EINVAL : 0;
     size_t pos = 0;
     char errbuf[128];
     int n, i;
@@ -726,19 +738,24 @@ static int test_arena_map(struct bpf_map *map, int iterations,
         key_size, value_size, (unsigned)BPF_MAP_TYPE_ARENA, fd);
     if (n > 0) pos += (size_t)n;
 
-    if (arena_mem)
-        prev_head = *(volatile uint32_t *)arena_mem;
-
     for (i = 0; i < iterations; i++) {
-        uint32_t cur_head = 0;
         uint32_t delta = 0;
 
         sleep(10);
 
-        if (arena_mem) {
-            cur_head = *(volatile uint32_t *)arena_mem;
-            delta = cur_head - prev_head;
-            prev_head = cur_head;
+        if (!setup_error) {
+            uint32_t head = __atomic_load_n(&queue->head, __ATOMIC_ACQUIRE);
+            uint32_t tail = __atomic_load_n(&queue->tail, __ATOMIC_RELAXED);
+            while (tail != head) {
+                uint32_t *ready = (uint32_t *)((char *)arena_mem + sizeof(*queue) +
+                                                (tail % ARENA_QUEUE_SLOTS) * slot_stride);
+                if (!__atomic_load_n(ready, __ATOMIC_ACQUIRE))
+                    break;
+                __atomic_store_n(ready, 0, __ATOMIC_RELEASE);
+                tail++;
+                __atomic_store_n(&queue->tail, tail, __ATOMIC_RELEASE);
+                delta++;
+            }
         }
 
         if (i > 0 && pos < map_json_size - 1) {
