@@ -21,6 +21,21 @@
 /* BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728). */
 #if MY_LINUX_VERSION_CODE >= 329728
 #include "cachestat_buffer.skel.h"
+#include "btrfs_buffer.skel.h"
+#include "disk_buffer.skel.h"
+#include "ext4_buffer.skel.h"
+#include "fdatasync_buffer.skel.h"
+#include "fsync_buffer.skel.h"
+#include "mdflush_buffer.skel.h"
+#include "mount_buffer.skel.h"
+#include "msync_buffer.skel.h"
+#include "network_viewer_buffer.skel.h"
+#include "nfs_buffer.skel.h"
+#include "sync_buffer.skel.h"
+#include "sync_file_range_buffer.skel.h"
+#include "syncfs_buffer.skel.h"
+#include "xfs_buffer.skel.h"
+#include "zfs_buffer.skel.h"
 #include "dc_buffer.skel.h"
 #include "dns_buffer.skel.h"
 #include "fd_buffer.skel.h"
@@ -34,6 +49,7 @@
 
 /* Arena programs require verifier behavior available from kernel >= 6.13. */
 #if MY_LINUX_VERSION_CODE >= 396544
+#include "netdata_stream_arena.h"
 #include "netdata_cachestat_arena.h"
 #include "netdata_dc_arena.h"
 #include "netdata_dns_arena.h"
@@ -46,6 +62,21 @@
 #include "netdata_vfs_arena.h"
 
 #include "cachestat_arena.skel.h"
+#include "btrfs_arena.skel.h"
+#include "disk_arena.skel.h"
+#include "ext4_arena.skel.h"
+#include "fdatasync_arena.skel.h"
+#include "fsync_arena.skel.h"
+#include "mdflush_arena.skel.h"
+#include "mount_arena.skel.h"
+#include "msync_arena.skel.h"
+#include "network_viewer_arena.skel.h"
+#include "nfs_arena.skel.h"
+#include "sync_arena.skel.h"
+#include "sync_file_range_arena.skel.h"
+#include "syncfs_arena.skel.h"
+#include "xfs_arena.skel.h"
+#include "zfs_arena.skel.h"
 #include "dc_arena.skel.h"
 #include "dns_arena.skel.h"
 #include "fd_arena.skel.h"
@@ -66,6 +97,21 @@
     static void prefix##_bpf__destroy(struct prefix##_bpf *obj)
 
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(cachestat_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(btrfs_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(disk_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(ext4_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fdatasync_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fsync_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(mdflush_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(mount_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(msync_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(network_viewer_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(nfs_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(sync_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(sync_file_range_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(syncfs_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(xfs_arena);
+DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(zfs_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dc_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(dns_arena);
 DECLARE_NETDATA_CORE_ARENA_SKEL_OPS(fd_arena);
@@ -108,12 +154,19 @@ enum selection_bits {
     SELECT_BTRFS         = 1ULL << 19,
     SELECT_XFS           = 1ULL << 20,
     SELECT_ZFS           = 1ULL << 21,
-    SELECT_FILESYSTEM    = SELECT_NFS | SELECT_EXT4 | SELECT_BTRFS | SELECT_XFS,
+    SELECT_FDATASYNC     = 1ULL << 22,
+    SELECT_FSYNC         = 1ULL << 23,
+    SELECT_MSYNC         = 1ULL << 24,
+    SELECT_SYNC_FILE_RANGE = 1ULL << 25,
+    SELECT_SYNCFS        = 1ULL << 26,
+    SELECT_FILESYSTEM    = SELECT_NFS | SELECT_EXT4 | SELECT_BTRFS | SELECT_XFS | SELECT_ZFS,
     SELECT_ALL_NON_FILESYSTEM = SELECT_CACHESTAT | SELECT_DC | SELECT_DISK | SELECT_DNS |
                                 SELECT_FD | SELECT_HARDIRQ | SELECT_MDFLUSH | SELECT_MOUNT |
                                 SELECT_NETWORKVIEWER | SELECT_OOMKILL | SELECT_PROCESS |
                                 SELECT_SHM | SELECT_SOCKET | SELECT_SOFTIRQ | SELECT_SWAP |
-                                SELECT_SYNC | SELECT_VFS
+                                SELECT_SYNC | SELECT_VFS,
+    SELECT_STREAM_SYNC_FAMILIES = SELECT_FDATASYNC | SELECT_FSYNC | SELECT_MSYNC |
+                                  SELECT_SYNC_FILE_RANGE | SELECT_SYNCFS
 };
 
 enum option_ids {
@@ -140,6 +193,11 @@ enum option_ids {
     OPT_SOFTIRQ,
     OPT_SWAP,
     OPT_SYNC,
+    OPT_FDATASYNC,
+    OPT_FSYNC,
+    OPT_MSYNC,
+    OPT_SYNC_FILE_RANGE,
+    OPT_SYNCFS,
     OPT_VFS,
     OPT_FILESYSTEM,
     OPT_NFS,
@@ -185,6 +243,7 @@ typedef struct aggregate_state {
     int selected_pid;
     uint64_t selection_mask;
     int explicit_selection;
+    int all_selected;
     int buffer_mode;
     int arena_mode;
     int buffer_iterations;
@@ -221,6 +280,21 @@ typedef struct buffer_skel_ops {
 
 #if MY_LINUX_VERSION_CODE >= 329728
 DEFINE_BUFFER_SKEL_OPS(cachestat_buffer)
+DEFINE_BUFFER_SKEL_OPS(btrfs_buffer)
+DEFINE_BUFFER_SKEL_OPS(disk_buffer)
+DEFINE_BUFFER_SKEL_OPS(ext4_buffer)
+DEFINE_BUFFER_SKEL_OPS(fdatasync_buffer)
+DEFINE_BUFFER_SKEL_OPS(fsync_buffer)
+DEFINE_BUFFER_SKEL_OPS(mdflush_buffer)
+DEFINE_BUFFER_SKEL_OPS(mount_buffer)
+DEFINE_BUFFER_SKEL_OPS(msync_buffer)
+DEFINE_BUFFER_SKEL_OPS(network_viewer_buffer)
+DEFINE_BUFFER_SKEL_OPS(nfs_buffer)
+DEFINE_BUFFER_SKEL_OPS(sync_buffer)
+DEFINE_BUFFER_SKEL_OPS(sync_file_range_buffer)
+DEFINE_BUFFER_SKEL_OPS(syncfs_buffer)
+DEFINE_BUFFER_SKEL_OPS(xfs_buffer)
+DEFINE_BUFFER_SKEL_OPS(zfs_buffer)
 DEFINE_BUFFER_SKEL_OPS(dc_buffer)
 DEFINE_BUFFER_SKEL_OPS(dns_buffer)
 DEFINE_BUFFER_SKEL_OPS(fd_buffer)
@@ -233,6 +307,21 @@ DEFINE_BUFFER_SKEL_OPS(vfs_buffer)
 
 static const buffer_skel_ops_t buffer_skel_ops[] = {
     { "cachestat", open_cachestat_buffer, load_cachestat_buffer, destroy_cachestat_buffer },
+	{ "btrfs", open_btrfs_buffer, load_btrfs_buffer, destroy_btrfs_buffer },
+	{ "disk", open_disk_buffer, load_disk_buffer, destroy_disk_buffer },
+	{ "ext4", open_ext4_buffer, load_ext4_buffer, destroy_ext4_buffer },
+	{ "fdatasync", open_fdatasync_buffer, load_fdatasync_buffer, destroy_fdatasync_buffer },
+	{ "fsync", open_fsync_buffer, load_fsync_buffer, destroy_fsync_buffer },
+	{ "mdflush", open_mdflush_buffer, load_mdflush_buffer, destroy_mdflush_buffer },
+	{ "mount", open_mount_buffer, load_mount_buffer, destroy_mount_buffer },
+	{ "msync", open_msync_buffer, load_msync_buffer, destroy_msync_buffer },
+	{ "networkviewer", open_network_viewer_buffer, load_network_viewer_buffer, destroy_network_viewer_buffer },
+	{ "nfs", open_nfs_buffer, load_nfs_buffer, destroy_nfs_buffer },
+	{ "sync", open_sync_buffer, load_sync_buffer, destroy_sync_buffer },
+	{ "sync_file_range", open_sync_file_range_buffer, load_sync_file_range_buffer, destroy_sync_file_range_buffer },
+	{ "syncfs", open_syncfs_buffer, load_syncfs_buffer, destroy_syncfs_buffer },
+	{ "xfs", open_xfs_buffer, load_xfs_buffer, destroy_xfs_buffer },
+	{ "zfs", open_zfs_buffer, load_zfs_buffer, destroy_zfs_buffer },
     { "dc", open_dc_buffer, load_dc_buffer, destroy_dc_buffer },
     { "dns", open_dns_buffer, load_dns_buffer, destroy_dns_buffer },
     { "fd", open_fd_buffer, load_fd_buffer, destroy_fd_buffer },
@@ -247,6 +336,21 @@ static const buffer_skel_ops_t buffer_skel_ops[] = {
 
 #if MY_LINUX_VERSION_CODE >= 396544
 DEFINE_BUFFER_SKEL_OPS(cachestat_arena)
+DEFINE_BUFFER_SKEL_OPS(btrfs_arena)
+DEFINE_BUFFER_SKEL_OPS(disk_arena)
+DEFINE_BUFFER_SKEL_OPS(ext4_arena)
+DEFINE_BUFFER_SKEL_OPS(fdatasync_arena)
+DEFINE_BUFFER_SKEL_OPS(fsync_arena)
+DEFINE_BUFFER_SKEL_OPS(mdflush_arena)
+DEFINE_BUFFER_SKEL_OPS(mount_arena)
+DEFINE_BUFFER_SKEL_OPS(msync_arena)
+DEFINE_BUFFER_SKEL_OPS(network_viewer_arena)
+DEFINE_BUFFER_SKEL_OPS(nfs_arena)
+DEFINE_BUFFER_SKEL_OPS(sync_arena)
+DEFINE_BUFFER_SKEL_OPS(sync_file_range_arena)
+DEFINE_BUFFER_SKEL_OPS(syncfs_arena)
+DEFINE_BUFFER_SKEL_OPS(xfs_arena)
+DEFINE_BUFFER_SKEL_OPS(zfs_arena)
 DEFINE_BUFFER_SKEL_OPS(dc_arena)
 DEFINE_BUFFER_SKEL_OPS(dns_arena)
 DEFINE_BUFFER_SKEL_OPS(fd_arena)
@@ -259,6 +363,21 @@ DEFINE_BUFFER_SKEL_OPS(vfs_arena)
 
 static const buffer_skel_ops_t arena_skel_ops[] = {
     { "cachestat", open_cachestat_arena, load_cachestat_arena, destroy_cachestat_arena },
+	{ "btrfs", open_btrfs_arena, load_btrfs_arena, destroy_btrfs_arena },
+	{ "disk", open_disk_arena, load_disk_arena, destroy_disk_arena },
+	{ "ext4", open_ext4_arena, load_ext4_arena, destroy_ext4_arena },
+	{ "fdatasync", open_fdatasync_arena, load_fdatasync_arena, destroy_fdatasync_arena },
+	{ "fsync", open_fsync_arena, load_fsync_arena, destroy_fsync_arena },
+	{ "mdflush", open_mdflush_arena, load_mdflush_arena, destroy_mdflush_arena },
+	{ "mount", open_mount_arena, load_mount_arena, destroy_mount_arena },
+	{ "msync", open_msync_arena, load_msync_arena, destroy_msync_arena },
+	{ "networkviewer", open_network_viewer_arena, load_network_viewer_arena, destroy_network_viewer_arena },
+	{ "nfs", open_nfs_arena, load_nfs_arena, destroy_nfs_arena },
+	{ "sync", open_sync_arena, load_sync_arena, destroy_sync_arena },
+	{ "sync_file_range", open_sync_file_range_arena, load_sync_file_range_arena, destroy_sync_file_range_arena },
+	{ "syncfs", open_syncfs_arena, load_syncfs_arena, destroy_syncfs_arena },
+	{ "xfs", open_xfs_arena, load_xfs_arena, destroy_xfs_arena },
+	{ "zfs", open_zfs_arena, load_zfs_arena, destroy_zfs_arena },
     { "dc", open_dc_arena, load_dc_arena, destroy_dc_arena },
     { "dns", open_dns_arena, load_dns_arena, destroy_dns_arena },
     { "fd", open_fd_arena, load_fd_arena, destroy_fd_arena },
@@ -289,7 +408,7 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "dc", "dc", netdata_dc_entry, NULL, NULL, SELECT_DC,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "dcstat_ctrl" },
     { "disk", "disk", netdata_disk_entry, NULL, NULL, SELECT_DISK,
-      MODE_NONE, 0, 0 },
+      MODE_NONE, 0, 0, 1, 1, "disk_ctrl" },
     { "dns", "dns", netdata_dns_entry, NULL, NULL, SELECT_DNS,
       MODE_NONE, 0, 0, 1, 1, NULL },
     { "fd", "fd", netdata_fd_entry, NULL, NULL, SELECT_FD,
@@ -297,11 +416,11 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "hardirq", "hardirq", netdata_hardirq_entry, NULL, NULL, SELECT_HARDIRQ,
       MODE_NONE, 0, 0 },
     { "mdflush", "mdflush", netdata_mdflush_entry, NULL, NULL, SELECT_MDFLUSH,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0, 1, 1, NULL },
     { "mount", "mount", netdata_mount_entry, NULL, NULL, SELECT_MOUNT,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0, 1, 1, NULL },
     { "networkviewer", "networkviewer", netdata_networkviewer_entry, NULL, NULL, SELECT_NETWORKVIEWER,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "nv_ctrl" },
     { "oomkill", "oomkill", netdata_oomkill_entry, NULL, NULL, SELECT_OOMKILL,
       MODE_NONE, 0, 0, 1, 1, NULL },
     { "process", "process", netdata_process_entry, NULL, NULL, SELECT_PROCESS,
@@ -315,19 +434,29 @@ static const aggregate_test_case_t aggregate_tests[] = {
     { "swap", "swap", netdata_swap_entry, NULL, NULL, SELECT_SWAP,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "swap_ctrl" },
     { "sync", "sync", netdata_sync_entry, NULL, NULL, SELECT_SYNC,
-      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0 },
+      MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 0, 1, 1, NULL },
+    { "fdatasync", NULL, NULL, NULL, "Dedicated CO-RE loader is available only in stream modes.", SELECT_FDATASYNC,
+      MODE_NONE, 0, 0, 1, 1, NULL },
+    { "fsync", NULL, NULL, NULL, "Dedicated CO-RE loader is available only in stream modes.", SELECT_FSYNC,
+      MODE_NONE, 0, 0, 1, 1, NULL },
+    { "msync", NULL, NULL, NULL, "Dedicated CO-RE loader is available only in stream modes.", SELECT_MSYNC,
+      MODE_NONE, 0, 0, 1, 1, NULL },
+    { "sync_file_range", NULL, NULL, NULL, "Dedicated CO-RE loader is available only in stream modes.", SELECT_SYNC_FILE_RANGE,
+      MODE_NONE, 0, 0, 1, 1, NULL },
+    { "syncfs", NULL, NULL, NULL, "Dedicated CO-RE loader is available only in stream modes.", SELECT_SYNCFS,
+      MODE_NONE, 0, 0, 1, 1, NULL },
     { "vfs", "vfs", netdata_vfs_entry, NULL, NULL, SELECT_VFS,
       MODE_PROBE | MODE_TRACEPOINT | MODE_TRAMPOLINE, 1, 1, 1, 1, "vfs_ctrl" },
     { "nfs", "filesystem", netdata_filesystem_entry, "--nfs", NULL, SELECT_NFS,
-      MODE_PROBE, 0, 0 },
+      MODE_PROBE, 0, 0, 1, 1, "nfs_ctrl" },
     { "ext4", "filesystem", netdata_filesystem_entry, "--ext4", NULL, SELECT_EXT4,
-      MODE_PROBE, 0, 0 },
+      MODE_PROBE, 0, 0, 1, 1, "ext4_ctrl" },
     { "btrfs", "filesystem", netdata_filesystem_entry, "--btrfs", NULL, SELECT_BTRFS,
-      MODE_PROBE, 0, 0 },
+      MODE_PROBE, 0, 0, 1, 1, "btrfs_ctrl" },
     { "xfs", "filesystem", netdata_filesystem_entry, "--xfs", NULL, SELECT_XFS,
-      MODE_PROBE, 0, 0 },
-    { "zfs", "zfs", NULL, NULL, "No CO-RE skeleton or tester is generated for zfs in this repository.",
-      SELECT_ZFS, MODE_NONE, 0, 0 }
+      MODE_PROBE, 0, 0, 1, 1, "xfs_ctrl" },
+    { "zfs", "filesystem", netdata_filesystem_entry, "--zfs", NULL,
+      SELECT_ZFS, MODE_PROBE, 0, 0, 1, 1, "zfs_ctrl" }
 };
 
 static void append_format(char *buffer, size_t size, const char *format, ...)
@@ -814,6 +943,7 @@ static const char * const netdata_core_kprobe_groups[][4] = {
     { "__folio_mark_dirty", "__set_page_dirty", "account_page_dirtied", NULL },
     { "swap_read_folio",    "swap_readpage",    NULL,                   NULL },
     { "__swap_writepage",   "swap_writepage",   NULL,                   NULL },
+    { "blk_mq_start_request", "blk_start_request", NULL,               NULL },
     { NULL,                 NULL,               NULL,                   NULL }
 };
 
@@ -846,14 +976,51 @@ static void netdata_core_select_kprobe_programs(struct bpf_object *obj)
         }
     }
 
-    /* Disable any remaining kprobe program whose target doesn't exist. */
+    /* Keep entry and return probes paired when optional modules are absent. */
     bpf_object__for_each_program(prog, obj) {
         const char *sec = bpf_program__section_name(prog);
-        if (!sec || strncmp(sec, "kprobe/", 7) != 0)
+        const char *target;
+        if (!sec)
             continue;
-        if (!netdata_core_symbol_in_kallsyms(sec + 7))
+        if (!strncmp(sec, "kprobe/", 7))
+            target = sec + 7;
+        else if (!strncmp(sec, "kretprobe/", 10))
+            target = sec + 10;
+        else
+            continue;
+        if (!netdata_core_symbol_in_kallsyms(target))
             bpf_program__set_autoload(prog, false);
     }
+}
+
+static int netdata_core_has_autoload_programs(struct bpf_object *obj)
+{
+    struct bpf_program *prog;
+    bpf_object__for_each_program(prog, obj) {
+        if (bpf_program__autoload(prog))
+            return 1;
+    }
+    return 0;
+}
+
+static int netdata_core_disk_has_probe_pair(struct bpf_object *obj)
+{
+    struct bpf_program *prog;
+    int issue = 0, complete = 0;
+    bpf_object__for_each_program(prog, obj) {
+        const char *section = bpf_program__section_name(prog);
+        if (!bpf_program__autoload(prog) || !section)
+            continue;
+        if (!strcmp(section, "kprobe/blk_mq_start_request") ||
+            !strcmp(section, "kprobe/blk_start_request"))
+            issue = 1;
+        if (!strcmp(section, "kprobe/blk_mq_end_request") ||
+            !strcmp(section, "kprobe/__blk_mq_end_request") ||
+            !strcmp(section, "kprobe/blk_mq_free_request") ||
+            !strcmp(section, "kprobe/blk_complete_request"))
+            complete = 1;
+    }
+    return issue && complete;
 }
 
 static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **links, size_t links_len,
@@ -895,6 +1062,11 @@ static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **link
 }
 
 static int netdata_core_arena_supported(void);
+
+static const char *netdata_stream_object_name(const char *name)
+{
+    return !strcmp(name, "networkviewer") ? "network_viewer" : name;
+}
 
 static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
 				  int *attached, int *skipped, int *maps, int *ringbuf_maps,
@@ -992,8 +1164,8 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
 
     init_result(result, test);
     snprintf(result->mode, sizeof(result->mode), "%s", "buffer");
-    snprintf(result->binary, sizeof(result->binary), "%s_buffer.skel.h", test->name);
-    snprintf(result->command, sizeof(result->command), "%s_buffer skeleton", test->name);
+    snprintf(result->binary, sizeof(result->binary), "%s_buffer.skel.h", netdata_stream_object_name(test->name));
+    snprintf(result->command, sizeof(result->command), "%s_buffer skeleton", netdata_stream_object_name(test->name));
     if (state->selected_pid >= 0)
         result->pid = state->selected_pid;
 
@@ -1023,6 +1195,13 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
     base = (buffer_skel_base_t *)skel;
     obj = base->obj;
     netdata_core_select_kprobe_programs(obj);
+    if (!netdata_core_has_autoload_programs(obj) ||
+        (!strcmp(test->name, "disk") && !netdata_core_disk_has_probe_pair(obj))) {
+        snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+        snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
+        ops->destroy(skel);
+        return 0;
+    }
 
     err = ops->load(skel);
     if (err)
@@ -1034,6 +1213,13 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
                                  result->maps_json, sizeof(result->maps_json));
     if (err)
         goto fail;
+
+    if (!attached) {
+        snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+        snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
+        ops->destroy(skel);
+        return 0;
+    }
 
     snprintf(result->status, sizeof(result->status), "%s", "Success");
     snprintf(result->detail, sizeof(result->detail),
@@ -1058,8 +1244,8 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
 {
     init_result(result, test);
     snprintf(result->mode, sizeof(result->mode), "%s", "arena");
-    snprintf(result->binary, sizeof(result->binary), "%s_arena.skel.h", test->name);
-    snprintf(result->command, sizeof(result->command), "%s_arena skeleton", test->name);
+    snprintf(result->binary, sizeof(result->binary), "%s_arena.skel.h", netdata_stream_object_name(test->name));
+    snprintf(result->command, sizeof(result->command), "%s_arena skeleton", netdata_stream_object_name(test->name));
     if (state->selected_pid >= 0)
         result->pid = state->selected_pid;
 
@@ -1104,6 +1290,13 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
         base = (buffer_skel_base_t *)skel;
         obj = base->obj;
         netdata_core_select_kprobe_programs(obj);
+        if (!netdata_core_has_autoload_programs(obj) ||
+            (!strcmp(test->name, "disk") && !netdata_core_disk_has_probe_pair(obj))) {
+            snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+            snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
+            ops->destroy(skel);
+            return 0;
+        }
 
         err = ops->load(skel);
         if (err)
@@ -1115,6 +1308,13 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
                                      result->maps_json, sizeof(result->maps_json));
         if (err)
             goto arena_fail;
+
+        if (!attached) {
+            snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+            snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
+            ops->destroy(skel);
+            return 0;
+        }
 
         snprintf(result->status, sizeof(result->status), "%s", "Success");
         snprintf(result->detail, sizeof(result->detail),
@@ -1168,14 +1368,15 @@ static void print_help(const char *name)
             "Selectors:\n"
             "  --cachestat --dc --disk --dns --fd --hardirq --mdflush --mount\n"
             "  --networkviewer --oomkill --process --shm --socket --softirq --swap\n"
-            "  --sync --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"
+            "  --sync --fdatasync --fsync --msync --sync_file_range --syncfs\n"
+            "  --vfs --filesystem --nfs --ext4 --btrfs --xfs --zfs\n"
             "\n"
             "Notes:\n"
             "  - --buffer and --arena may be combined; buffers run before arenas.\n"
             "  - --all excludes filesystem coverage: nfs, ext4, btrfs, xfs, and zfs.\n"
-            "  - --filesystem expands to --nfs --ext4 --btrfs --xfs.\n"
-            "  - zfs is reported as unavailable because this repository does not generate\n"
-            "    a CO-RE zfs skeleton/tester.\n",
+            "  - --filesystem expands to --nfs --ext4 --btrfs --xfs --zfs.\n"
+            "  - Individual sync syscall objects require --buffer or --arena.\n"
+            "  - Filesystem modules are unavailable when their probe targets are absent.\n",
             name);
 }
 
@@ -1206,6 +1407,11 @@ int main(int argc, char **argv)
         { "softirq",       no_argument,       0, OPT_SOFTIRQ },
         { "swap",          no_argument,       0, OPT_SWAP },
         { "sync",          no_argument,       0, OPT_SYNC },
+        { "fdatasync",     no_argument,       0, OPT_FDATASYNC },
+        { "fsync",         no_argument,       0, OPT_FSYNC },
+        { "msync",         no_argument,       0, OPT_MSYNC },
+        { "sync_file_range", no_argument,     0, OPT_SYNC_FILE_RANGE },
+        { "syncfs",        no_argument,       0, OPT_SYNCFS },
         { "vfs",           no_argument,       0, OPT_VFS },
         { "filesystem",    no_argument,       0, OPT_FILESYSTEM },
         { "nfs",           no_argument,       0, OPT_NFS },
@@ -1262,6 +1468,7 @@ int main(int argc, char **argv)
             case OPT_ALL:
                 state.selection_mask |= SELECT_ALL_NON_FILESYSTEM;
                 state.explicit_selection = 1;
+                state.all_selected = 1;
                 break;
             case OPT_ARENA:
                 state.arena_mode = 1;
@@ -1330,6 +1537,26 @@ int main(int argc, char **argv)
                 state.selection_mask |= SELECT_SYNC;
                 state.explicit_selection = 1;
                 break;
+            case OPT_FDATASYNC:
+                state.selection_mask |= SELECT_FDATASYNC;
+                state.explicit_selection = 1;
+                break;
+            case OPT_FSYNC:
+                state.selection_mask |= SELECT_FSYNC;
+                state.explicit_selection = 1;
+                break;
+            case OPT_MSYNC:
+                state.selection_mask |= SELECT_MSYNC;
+                state.explicit_selection = 1;
+                break;
+            case OPT_SYNC_FILE_RANGE:
+                state.selection_mask |= SELECT_SYNC_FILE_RANGE;
+                state.explicit_selection = 1;
+                break;
+            case OPT_SYNCFS:
+                state.selection_mask |= SELECT_SYNCFS;
+                state.explicit_selection = 1;
+                break;
             case OPT_VFS:
                 state.selection_mask |= SELECT_VFS;
                 state.explicit_selection = 1;
@@ -1369,7 +1596,10 @@ int main(int argc, char **argv)
     if (!state.explicit_selection) {
         state.selection_mask = SELECT_ALL_NON_FILESYSTEM;
         state.explicit_selection = 1;
+        state.all_selected = 1;
     }
+    if (state.all_selected && (state.buffer_mode || state.arena_mode))
+        state.selection_mask |= SELECT_STREAM_SYNC_FAMILIES;
 
     if (log_path) {
         report = fopen(log_path, "w");
@@ -1405,6 +1635,8 @@ int main(int argc, char **argv)
 
 #if MY_LINUX_VERSION_CODE >= 329728
             failures += execute_buffer_test(&state, test, &results[result_count]) != 0;
+            if (!strcmp(results[result_count].status, "Unavailable"))
+                unavailable++;
 #else
             record_unavailable(&results[result_count], test,
                                "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8.");
@@ -1421,6 +1653,8 @@ int main(int argc, char **argv)
 
 #if MY_LINUX_VERSION_CODE >= 329728
             failures += execute_arena_test(&state, test, &results[result_count]) != 0;
+            if (!strcmp(results[result_count].status, "Unavailable"))
+                unavailable++;
 #else
             record_unavailable(&results[result_count], test,
                                "Arena (BPF_MAP_TYPE_ARENA) requires kernel >= 6.13 for verifier compatibility.");
