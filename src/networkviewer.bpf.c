@@ -7,6 +7,7 @@
 
 #include "netdata_core.h"
 #include "netdata_socket.h"
+#include "netdata_stream_mode.h"
 
 // Copied from https://elixir.bootlin.com/linux/v5.15.5/source/include/linux/socket.h#L175
 #define AF_UNSPEC	0
@@ -207,6 +208,7 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_ACCEPT, &idx, val);
         return 0;
     }
 
@@ -217,6 +219,7 @@ int BPF_KRETPROBE(netdata_nv_inet_csk_accept_kretprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_ACCEPT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -236,6 +239,7 @@ int BPF_KPROBE(netdata_nv_tcp_v4_connect_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V4_CONNECT, &idx, val);
         return 0;
     }
 
@@ -246,6 +250,7 @@ int BPF_KPROBE(netdata_nv_tcp_v4_connect_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V4_CONNECT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -265,6 +270,7 @@ int BPF_KPROBE(netdata_nv_tcp_v6_connect_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V6_CONNECT, &idx, val);
         return 0;
     }
 
@@ -275,6 +281,7 @@ int BPF_KPROBE(netdata_nv_tcp_v6_connect_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V6_CONNECT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -294,6 +301,7 @@ int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RETRANSMIT, &idx, val);
         return 0;
     }
 
@@ -304,6 +312,7 @@ int BPF_KPROBE(netdata_nv_tcp_retransmit_skb_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RETRANSMIT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -324,6 +333,7 @@ int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RECEIVE, &idx, val);
         return 0;
     }
 
@@ -334,6 +344,7 @@ int BPF_KPROBE(netdata_nv_tcp_cleanup_rbuf_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RECEIVE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -356,6 +367,7 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, state, direction);
         val->state = state;
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_STATE, &idx, val);
         return 0;
     }
 
@@ -367,6 +379,7 @@ int BPF_KPROBE(netdata_nv_tcp_set_state_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_STATE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -386,6 +399,7 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_SEND, &idx, val);
         return 0;
     }
 
@@ -396,6 +410,7 @@ int BPF_KPROBE(netdata_nv_tcp_sendmsg_kprobe)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_SEND, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -417,6 +432,7 @@ int BPF_KPROBE(netdata_nv_tcp_close_kprobe)
     }
 
     val->closed = 1;
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_CLOSE, &idx, val);
 
     return 0;
 
@@ -436,6 +452,7 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
     if (val) {
         direction = NETDATA_SOCKET_DIRECTION_NONE;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_SEND, &idx, val);
         return 0;
     }
 
@@ -447,6 +464,7 @@ int BPF_KPROBE(netdata_nv_udp_sendmsg_kprobe)
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_SEND, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -467,6 +485,7 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
     if (val) {
         direction = NETDATA_SOCKET_DIRECTION_NONE;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_RECEIVE, &idx, val);
 
         return 0;
     }
@@ -479,6 +498,7 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_RECEIVE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -491,6 +511,7 @@ int BPF_KPROBE(netdata_nv_udp_recvmsg_kprobe)
  *
  ***********************************************************************************/
 
+#ifndef NETDATA_STREAM_ONLY
 SEC("fexit/inet_csk_accept")
 int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
 {
@@ -509,6 +530,7 @@ int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_ACCEPT, &idx, val);
         return 0;
     }
 
@@ -519,6 +541,7 @@ int BPF_PROG(netdata_nv_inet_csk_accept_fexit, struct sock *sk)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_ACCEPT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -537,6 +560,7 @@ int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr 
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V4_CONNECT, &idx, val);
         return 0;
     }
 
@@ -547,6 +571,7 @@ int BPF_PROG(netdata_nv_tcp_v4_connect_fentry, struct sock *sk, struct sockaddr 
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V4_CONNECT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -565,6 +590,7 @@ int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr 
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V6_CONNECT, &idx, val);
         return 0;
     }
 
@@ -575,6 +601,7 @@ int BPF_PROG(netdata_nv_tcp_v6_connect_fentry, struct sock *sk, struct sockaddr 
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_V6_CONNECT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -593,6 +620,7 @@ int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RETRANSMIT, &idx, val);
         return 0;
     }
 
@@ -603,6 +631,7 @@ int BPF_PROG(netdata_nv_tcp_retransmit_skb_fentry, struct sock *sk)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RETRANSMIT, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -622,6 +651,7 @@ int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RECEIVE, &idx, val);
         return 0;
     }
 
@@ -632,6 +662,7 @@ int BPF_PROG(netdata_nv_tcp_cleanup_rbuf_fentry, struct sock *sk, int copied)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_RECEIVE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -651,6 +682,7 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, state, direction);
         val->state = state;
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_STATE, &idx, val);
         return 0;
     }
 
@@ -662,6 +694,7 @@ int BPF_PROG(netdata_nv_tcp_set_state_fentry, struct sock *sk, int state)
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_STATE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -680,6 +713,7 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     netdata_nv_data_t *val = (netdata_nv_data_t *) bpf_map_lookup_elem(&tbl_nv_socket, &idx);
     if (val) {
         set_common_tcp_nv_data(&idx, val, sk, family, 0, direction);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_SEND, &idx, val);
         return 0;
     }
 
@@ -690,6 +724,7 @@ int BPF_PROG(netdata_nv_tcp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     set_common_tcp_nv_data(&idx, &data, sk, family, 0, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_SEND, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -707,6 +742,7 @@ int BPF_PROG(netdata_nv_tcp_close_fentry, struct sock *sk, long timeout)
     }
 
     val->closed = 1;
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_TCP_CLOSE, &idx, val);
 
     return 0;
 }
@@ -725,6 +761,7 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
         direction = NETDATA_SOCKET_DIRECTION_NONE;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
         BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_SEND, &idx, val);
         return 0;
     }
 
@@ -736,6 +773,7 @@ int BPF_PROG(netdata_nv_udp_sendmsg_fentry, struct sock *sk, struct msghdr *msg,
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_SEND, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
@@ -757,6 +795,7 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
         direction = NETDATA_SOCKET_DIRECTION_NONE;
         set_common_udp_nv_data(&idx, val, sk, family, direction);
         BPF_CORE_READ_INTO(&val->state, sk, __sk_common.skc_state);
+        netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_RECEIVE, &idx, val);
         return 0;
     }
 
@@ -768,11 +807,14 @@ int BPF_PROG(netdata_nv_udp_recvmsg_fentry, struct sock *sk)
     set_common_udp_nv_data(&idx, &data, sk, family, direction);
 
     bpf_map_update_elem(&tbl_nv_socket, &idx, &data, BPF_ANY);
+    netdata_stream_emit_network(&nv_ctrl, NETDATA_STREAM_NV_UDP_RECEIVE, &idx, &data);
 
     libnetdata_update_global(&nv_ctrl, NETDATA_CONTROLLER_PID_TABLE_ADD, 1);
 
     return 0;
 }
+
+#endif
 
 char _license[] SEC("license") = "GPL";
 

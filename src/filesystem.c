@@ -75,6 +75,13 @@ static struct filesystem_data fd[] = {
         .bf = NULL
     },
     {
+        .name = "zfs",
+        .path = NULL,
+        .functions = { "zpl_iter_read", "zpl_iter_write", "zpl_open", "zpl_fsync", NULL },
+        .ids = { -1, -1, -1, -1, -1 },
+        .bf = NULL
+    },
+    {
         .name = NULL,
         .path = NULL,
         .functions = { NULL },
@@ -212,22 +219,22 @@ static int ebpf_fs_attach_kprobe(struct filesystem_bpf *obj, const char **functi
     
     // kretprobe
     obj->links.netdata_fs_file_read_retprobe = bpf_program__attach_kprobe(obj->progs.netdata_fs_file_read_retprobe,
-                                                                false, functions[NETDATA_KEY_BTF_READ]);
+                                                                true, functions[NETDATA_KEY_BTF_READ]);
     if (libbpf_get_error(obj->links.netdata_fs_file_read_retprobe))
         return -1;
 
     obj->links.netdata_fs_file_write_retprobe = bpf_program__attach_kprobe(obj->progs.netdata_fs_file_write_retprobe,
-                                                                false, functions[NETDATA_KEY_BTF_WRITE]);
+                                                                true, functions[NETDATA_KEY_BTF_WRITE]);
     if (libbpf_get_error(obj->links.netdata_fs_file_write_retprobe))
         return -1;
 
     obj->links.netdata_fs_file_open_retprobe = bpf_program__attach_kprobe(obj->progs.netdata_fs_file_open_retprobe,
-                                                                false, functions[NETDATA_KEY_BTF_OPEN]);
+                                                                true, functions[NETDATA_KEY_BTF_OPEN]);
     if (libbpf_get_error(obj->links.netdata_fs_file_open_retprobe))
         return -1;
 
     obj->links.netdata_fs_getattr_retprobe = bpf_program__attach_kprobe(obj->progs.netdata_fs_getattr_retprobe,
-                                                                false, functions[NETDATA_KEY_BTF_SYNC_ATTR]);
+                                                                true, functions[NETDATA_KEY_BTF_SYNC_ATTR]);
     if (libbpf_get_error(obj->links.netdata_fs_getattr_retprobe))
         return -1;
 
@@ -238,7 +245,7 @@ static int ebpf_fs_attach_kprobe(struct filesystem_bpf *obj, const char **functi
             return -1;
 
         obj->links.netdata_fs_2nd_file_open_retprobe = bpf_program__attach_kprobe(obj->progs.netdata_fs_2nd_file_open_retprobe,
-                                                                false, functions[NETDATA_KEY_BTF_OPEN2]);
+                                                                true, functions[NETDATA_KEY_BTF_OPEN2]);
         if (libbpf_get_error(obj->links.netdata_fs_2nd_file_open_retprobe))
             return -1;
     }
@@ -277,14 +284,15 @@ static inline int ebpf_load_and_attach(struct filesystem_bpf *obj, const char **
 static int ebpf_load_fs(int idx)
 {
     struct filesystem_bpf *obj = NULL;
+    int ret;
     obj = filesystem_bpf__open();
     if (obj) {
-        ebpf_load_and_attach(obj, fd[idx].functions, fd[idx].name, fd[idx].bf);
+        ret = ebpf_load_and_attach(obj, fd[idx].functions, fd[idx].name, fd[idx].bf);
         filesystem_bpf__destroy(obj);
     } else
         return 3;
 
-    return 0;
+    return ret;
 }
 
 static inline void ebpf_print_fs_help(char *name, char *info) {
@@ -295,6 +303,7 @@ static inline void ebpf_print_fs_help(char *name, char *info) {
                     "--ext4       (-e): Run tests for ext4 filesystem\n" 
                     "--btrfs      (-b): Run tests for btrfs filesystem\n" 
                     "--xfs        (-x): Run tests for xfs filesystem\n" 
+                    "--zfs        (-z): Run tests for zfs filesystem\n"
                     "\n\n"
                     "Usage: %s --ext4\n"
                     , name, info, name);
@@ -308,6 +317,7 @@ int main(int argc, char **argv)
         {"ext4",        no_argument,    0,  'e' },
         {"btrfs",       no_argument,    0,  'b' },
         {"xfs",         no_argument,    0,  'x' },
+        {"zfs",         no_argument,    0,  'z' },
         {0, 0, 0, 0}
     };
 
@@ -341,6 +351,10 @@ int main(int argc, char **argv)
                       }
             case 'x': {
                           fs = 3;
+                          break;
+                      }
+            case 'z': {
+                          fs = 4;
                           break;
                       }
             default: {

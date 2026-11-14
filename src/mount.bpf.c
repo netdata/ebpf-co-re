@@ -4,6 +4,7 @@
 
 #include "netdata_core.h"
 #include "netdata_mount.h"
+#include "netdata_stream_mode.h"
 
 /************************************************************************************
  *
@@ -33,6 +34,8 @@ int netdata_mount_exit(struct trace_event_raw_sys_exit *arg)
     if (ret < 0)
         libnetdata_update_global(&tbl_mount, NETDATA_KEY_MOUNT_ERROR, 1);
 
+    netdata_stream_emit_mount(0, NETDATA_STREAM_MOUNT, ret, 1);
+
     return 0;
 }
 
@@ -45,6 +48,8 @@ int netdata_umount_exit(struct trace_event_raw_sys_exit *arg)
     if (ret < 0)
         libnetdata_update_global(&tbl_mount, NETDATA_KEY_UMOUNT_ERROR, 1);
 
+    netdata_stream_emit_mount(0, NETDATA_STREAM_UMOUNT, ret, 1);
+
     return 0;
 }
 
@@ -54,6 +59,7 @@ int netdata_umount_exit(struct trace_event_raw_sys_exit *arg)
  *
  ***********************************************************************************/
 
+#ifndef NETDATA_STREAM_ONLY
 SEC("kprobe/netdata_mount_probe")
 int BPF_KPROBE(netdata_mount_probe)
 {
@@ -129,6 +135,7 @@ int BPF_PROG(netdata_umount_fexit, const struct pt_regs *regs, long ret)
 
     return 0;
 }
+#endif
 
 char _license[] SEC("license") = "GPL";
 
