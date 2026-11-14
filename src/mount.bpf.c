@@ -39,11 +39,7 @@ int netdata_mount_exit(struct trace_event_raw_sys_exit *arg)
     return 0;
 }
 
-#ifdef NETDATA_STREAM_ONLY
-SEC("tracepoint/syscalls/sys_exit_umount2")
-#else
 SEC("tracepoint/syscalls/sys_exit_umount")
-#endif
 int netdata_umount_exit(struct trace_event_raw_sys_exit *arg)
 {
     libnetdata_update_global(&tbl_mount, NETDATA_KEY_UMOUNT_CALL, 1);
