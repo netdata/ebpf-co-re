@@ -1061,6 +1061,66 @@ static int attach_buffer_programs(struct bpf_object *obj, struct bpf_link **link
     return 0;
 }
 
+static int netdata_core_attach_section(struct bpf_object *obj, const char *section,
+                                       struct bpf_link **links, size_t links_len, int *attached)
+{
+    struct bpf_program *prog;
+
+    bpf_object__for_each_program(prog, obj) {
+        const char *sec = bpf_program__section_name(prog);
+        struct bpf_link *link;
+        int err;
+
+        if (!sec || strcmp(sec, section) || bpf_program__fd(prog) < 0)
+            continue;
+        if ((size_t)*attached >= links_len)
+            return -ENOSPC;
+
+        link = bpf_program__attach(prog);
+        err = (int)libbpf_get_error(link);
+        if (err)
+            return err;
+        links[(*attached)++] = link;
+        return 0;
+    }
+
+    return -ENOENT;
+}
+
+/* Mirrors disk.c: inline completion helpers are notrace on newer kernels, so
+ * kprobe creation returns -EINVAL; they are fallbacks, not requirements. */
+static int netdata_core_attach_disk_programs(struct bpf_object *obj, struct bpf_link **links,
+                                             size_t links_len, int *attached)
+{
+    static const char * const issue[] = { "kprobe/blk_mq_start_request", "kprobe/blk_start_request", NULL };
+    static const char * const secondary[] = { "kprobe/__blk_mq_end_request", "kprobe/blk_mq_free_request", NULL };
+    int err = -ENOENT;
+    int completion_err;
+    int issue_ok = 0, primary_ok, secondary_ok = 0;
+    int i;
+
+    for (i = 0; issue[i] && !issue_ok; i++) {
+        err = netdata_core_attach_section(obj, issue[i], links, links_len, attached);
+        issue_ok = !err;
+    }
+    if (!issue_ok)
+        return err;
+
+    completion_err = netdata_core_attach_section(obj, "kprobe/blk_mq_end_request", links, links_len, attached);
+    primary_ok = !completion_err;
+    for (i = 0; secondary[i] && !secondary_ok; i++) {
+        err = netdata_core_attach_section(obj, secondary[i], links, links_len, attached);
+        secondary_ok = !err;
+        if (err && err != -ENOENT)
+            completion_err = err;
+    }
+    if (!primary_ok && !secondary_ok)
+        return completion_err;
+
+    err = netdata_core_attach_section(obj, "kprobe/blk_complete_request", links, links_len, attached);
+    return err == -ENOSPC ? err : 0;
+}
+
 static int netdata_core_arena_supported(void);
 
 static const char *netdata_stream_object_name(const char *name)
@@ -1068,7 +1128,7 @@ static const char *netdata_stream_object_name(const char *name)
     return !strcmp(name, "networkviewer") ? "network_viewer" : name;
 }
 
-static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
+static int run_loaded_buffer_test(struct bpf_object *obj, const char *name, int iterations,
 				  int *attached, int *skipped, int *maps, int *ringbuf_maps,
 				  char *maps_json_buf, size_t maps_json_size)
 {
@@ -1088,11 +1148,14 @@ static int run_loaded_buffer_test(struct bpf_object *obj, int iterations,
     if (maps_json_buf && maps_json_size > 0)
         maps_json_buf[0] = '\0';
 
-    err = attach_buffer_programs(obj, links, sizeof(links) / sizeof(links[0]), attached, skipped);
+    if (!strcmp(name, "disk"))
+        err = netdata_core_attach_disk_programs(obj, links, sizeof(links) / sizeof(links[0]), attached);
+    else
+        err = attach_buffer_programs(obj, links, sizeof(links) / sizeof(links[0]), attached, skipped);
+    /* Release links created before a partial attach failure. */
+    link_count = *attached;
     if (err)
         goto out;
-
-    link_count = *attached;
 
     bpf_object__for_each_map(map, obj) {
         enum bpf_map_type map_type = bpf_map__type(map);
@@ -1209,12 +1272,12 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
 
     fill_ctrl_map(obj, test->buffer_ctrl, state->selected_pid >= 0 ? state->selected_pid : PID_MIN);
 
-    err = run_loaded_buffer_test(obj, state->buffer_iterations, &attached, &skipped, &maps, &ringbuf_maps,
+    err = run_loaded_buffer_test(obj, test->name, state->buffer_iterations, &attached, &skipped, &maps, &ringbuf_maps,
                                  result->maps_json, sizeof(result->maps_json));
     if (err)
         goto fail;
 
-    if (!attached) {
+    if (!attached && !skipped) {
         snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
         snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
         ops->destroy(skel);
@@ -1304,12 +1367,12 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
 
         fill_ctrl_map(obj, test->buffer_ctrl, state->selected_pid >= 0 ? state->selected_pid : PID_MIN);
 
-        err = run_loaded_buffer_test(obj, state->buffer_iterations, &attached, &skipped, &maps, &ringbuf_maps,
+        err = run_loaded_buffer_test(obj, test->name, state->buffer_iterations, &attached, &skipped, &maps, &ringbuf_maps,
                                      result->maps_json, sizeof(result->maps_json));
         if (err)
             goto arena_fail;
 
-        if (!attached) {
+        if (!attached && !skipped) {
             snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
             snprintf(result->detail, sizeof(result->detail), "%s", "No probe target is available on this kernel.");
             ops->destroy(skel);

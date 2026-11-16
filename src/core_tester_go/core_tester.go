@@ -677,6 +677,66 @@ static int netdata_core_disk_has_probe_pair(struct bpf_object *obj)
 	return issue && complete;
 }
 
+static int netdata_core_attach_section(struct bpf_object *obj, const char *section,
+				       struct bpf_link **links, size_t links_len, int *attached)
+{
+	struct bpf_program *prog;
+
+	bpf_object__for_each_program(prog, obj) {
+		const char *sec = bpf_program__section_name(prog);
+		struct bpf_link *link;
+		int err;
+
+		if (!sec || strcmp(sec, section) || bpf_program__fd(prog) < 0)
+			continue;
+		if ((size_t)*attached >= links_len)
+			return -ENOSPC;
+
+		link = bpf_program__attach(prog);
+		err = (int)libbpf_get_error(link);
+		if (err)
+			return err;
+		links[(*attached)++] = link;
+		return 0;
+	}
+
+	return -ENOENT;
+}
+
+// Mirrors disk.c: inline completion helpers are notrace on newer kernels, so
+// kprobe creation returns -EINVAL; they are fallbacks, not requirements.
+static int netdata_core_attach_disk_programs(struct bpf_object *obj, struct bpf_link **links,
+					     size_t links_len, int *attached)
+{
+	static const char * const issue[] = { "kprobe/blk_mq_start_request", "kprobe/blk_start_request", NULL };
+	static const char * const secondary[] = { "kprobe/__blk_mq_end_request", "kprobe/blk_mq_free_request", NULL };
+	int err = -ENOENT;
+	int completion_err;
+	int issue_ok = 0, primary_ok, secondary_ok = 0;
+	int i;
+
+	for (i = 0; issue[i] && !issue_ok; i++) {
+		err = netdata_core_attach_section(obj, issue[i], links, links_len, attached);
+		issue_ok = !err;
+	}
+	if (!issue_ok)
+		return err;
+
+	completion_err = netdata_core_attach_section(obj, "kprobe/blk_mq_end_request", links, links_len, attached);
+	primary_ok = !completion_err;
+	for (i = 0; secondary[i] && !secondary_ok; i++) {
+		err = netdata_core_attach_section(obj, secondary[i], links, links_len, attached);
+		secondary_ok = !err;
+		if (err && err != -ENOENT)
+			completion_err = err;
+	}
+	if (!primary_ok && !secondary_ok)
+		return completion_err;
+
+	err = netdata_core_attach_section(obj, "kprobe/blk_complete_request", links, links_len, attached);
+	return err == -ENOSPC ? err : 0;
+}
+
 static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_name, int map_level, int iterations,
 						     int *attached, int *skipped, int *maps, int *ring_maps,
 						     char *maps_json_buf, int maps_json_size, size_t *total_samples,
@@ -728,7 +788,15 @@ static int netdata_core_run_buffer_skel_test(const char *name, const char *ctrl_
 
 	netdata_core_fill_ctrl_map(obj, ctrl_name, map_level);
 
-	bpf_object__for_each_program(prog, obj) {
+	if (!strcmp(name, "disk")) {
+		int disk_links = 0;
+
+		err = netdata_core_attach_disk_programs(obj, links, sizeof(links) / sizeof(links[0]), &disk_links);
+		link_count = (size_t)disk_links;
+		*attached = disk_links;
+		if (err)
+			goto out;
+	} else bpf_object__for_each_program(prog, obj) {
 		struct bpf_link *link;
 
 		if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
@@ -869,7 +937,15 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 
 	netdata_core_fill_ctrl_map(obj, ctrl_name, map_level);
 
-	bpf_object__for_each_program(prog, obj) {
+	if (!strcmp(name, "disk")) {
+		int disk_links = 0;
+
+		err = netdata_core_attach_disk_programs(obj, links, sizeof(links) / sizeof(links[0]), &disk_links);
+		link_count = (size_t)disk_links;
+		*attached = disk_links;
+		if (err)
+			goto out;
+	} else bpf_object__for_each_program(prog, obj) {
 		struct bpf_link *link;
 
 		if (bpf_program__type(prog) == BPF_PROG_TYPE_SOCKET_FILTER) {
@@ -1378,7 +1454,7 @@ func executeBufferTest(state aggregateState, test aggregateTestCase) (aggregateR
 		result.mapsJSON = mapsJSON
 		return result, 1
 	}
-	if attached == 0 {
+	if attached == 0 && skipped == 0 {
 		result.status = "Unavailable"
 		result.detail = "No probe target is available on this kernel."
 		result.mapsJSON = mapsJSON
@@ -1468,7 +1544,7 @@ func executeArenaTest(state aggregateState, test aggregateTestCase) (aggregateRe
 		result.mapsJSON = mapsJSON
 		return result, 1
 	}
-	if attached == 0 {
+	if attached == 0 && skipped == 0 {
 		result.status = "Unavailable"
 		result.detail = "No probe target is available on this kernel."
 		result.mapsJSON = mapsJSON
