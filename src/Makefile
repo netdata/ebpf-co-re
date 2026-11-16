@@ -44,15 +44,30 @@ APPS = cachestat \
        #
 
 BUFFER_APPS = cachestat_buffer \
+              btrfs_buffer \
               dc_buffer \
+              disk_buffer \
               dns_buffer \
+              ext4_buffer \
+              fdatasync_buffer \
               fd_buffer \
+              fsync_buffer \
+              mdflush_buffer \
+              mount_buffer \
+              msync_buffer \
+              network_viewer_buffer \
+              nfs_buffer \
               socket_buffer \
               oomkill_buffer \
               process_buffer \
               shm_buffer \
               swap_buffer \
+              sync_buffer \
+              sync_file_range_buffer \
+              syncfs_buffer \
               vfs_buffer \
+              xfs_buffer \
+              zfs_buffer \
               #
 
 # BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8.
@@ -66,15 +81,30 @@ endif
 # Kernel 6.12 accepts the map type but rejects the generated arena event pointers.
 ifeq ($(shell test $(RUNNING_VERSION_CODE) -ge 396544 ; echo $$?),0)
 ARENA_APPS = cachestat_arena \
+             btrfs_arena \
              dc_arena \
+             disk_arena \
              dns_arena \
+             ext4_arena \
+             fdatasync_arena \
              fd_arena \
+             fsync_arena \
+             mdflush_arena \
+             mount_arena \
+             msync_arena \
+             network_viewer_arena \
+             nfs_arena \
              socket_arena \
              oomkill_arena \
              process_arena \
              shm_arena \
              swap_arena \
+             sync_arena \
+             sync_file_range_arena \
+             syncfs_arena \
              vfs_arena \
+             xfs_arena \
+             zfs_arena \
              #
 ARENA_SKELS = $(patsubst %,%.skel.h,$(ARENA_APPS))
 # Arena slot reservation uses atomic fetch-add, which requires BPF ISA v3.

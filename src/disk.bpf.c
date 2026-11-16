@@ -5,6 +5,7 @@
 
 #include "netdata_core.h"
 #include "netdata_disk.h"
+#include "netdata_stream_mode.h"
 
 // The pinned BTF snapshot omits request; CO-RE matches this flavored view on target kernels.
 struct request___netdata {
@@ -139,6 +140,8 @@ static __always_inline int netdata_block_rq_complete_impl(struct pt_regs *ctx)
         return 0;
 
     __u64 curr = (bpf_ktime_get_ns() - fill->timestamp) / 1000;
+    netdata_stream_emit_disk(&disk_ctrl, netdata_new_encode_dev(fill->key.dev),
+                             fill->key.sector, curr);
     block_key_t blk = {
         .bin = libnetdata_select_idx(curr, NETDATA_FS_MAX_BINS_POS),
         .dev = netdata_new_encode_dev(fill->key.dev)

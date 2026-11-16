@@ -5,6 +5,7 @@
 
 #include "netdata_core.h"
 #include "netdata_mdflush.h"
+#include "netdata_stream_mode.h"
 
 // Copied from https://elixir.bootlin.com/linux/v5.16-rc2/source/include/uapi/linux/major.h
 // that has the same value of https://elixir.bootlin.com/linux/v4.14/source/include/uapi/linux/major.h#L25
@@ -72,6 +73,8 @@ static __always_inline int netdata_md_common(struct mddev *mddev)
         bpf_map_update_elem(&tbl_mdflush, &key, &val, BPF_ANY);
     }
 
+    netdata_stream_emit_md(0, key);
+
     return 0;
 }
 
@@ -95,11 +98,13 @@ int BPF_KPROBE(netdata_md_flush_request_kprobe)
  *
  ***********************************************************************************/
 
+#ifndef NETDATA_STREAM_ONLY
 SEC("fentry/md_flush_request")
 int BPF_PROG(netdata_md_flush_request_fentry, struct mddev *mddev)
 {
     return netdata_md_common(mddev);
 }
+#endif
 
 char _license[] SEC("license") = "GPL";
 
