@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <bpf/bpf.h>
@@ -1123,6 +1125,29 @@ static int netdata_core_attach_disk_programs(struct bpf_object *obj, struct bpf_
 
 static int netdata_core_arena_supported(void);
 
+/* Kernels before 5.11 charge BPF maps to RLIMIT_MEMLOCK; the classic
+ * entrypoints raise it the same way before loading. */
+static void netdata_core_raise_memlock(void)
+{
+    struct rlimit r = { RLIM_INFINITY, RLIM_INFINITY };
+
+    if (setrlimit(RLIMIT_MEMLOCK, &r))
+        fprintf(stderr, "Cannot raise RLIMIT_MEMLOCK: %s\n", strerror(errno));
+}
+
+/* The tester may run on an older kernel than the one it was built on. */
+static int netdata_core_kernel_at_least(unsigned int code)
+{
+    struct utsname u;
+    unsigned int major = 0, minor = 0, patch = 0;
+
+    if (uname(&u) || sscanf(u.release, "%u.%u.%u", &major, &minor, &patch) < 2)
+        return 1;
+    if (patch > 255)
+        patch = 255;
+    return ((major << 16) | (minor << 8) | patch) >= code;
+}
+
 static const char *netdata_stream_object_name(const char *name)
 {
     return !strcmp(name, "networkviewer") ? "network_viewer" : name;
@@ -1245,6 +1270,13 @@ static int execute_buffer_test(const aggregate_state_t *state, const aggregate_t
         snprintf(result->status, sizeof(result->status), "%s", "Fail");
         snprintf(result->detail, sizeof(result->detail), "%s", "Buffer skeleton is not compiled into this tester.");
         return 1;
+    }
+
+    if (!netdata_core_kernel_at_least(329728)) {
+        snprintf(result->status, sizeof(result->status), "%s", "Unavailable");
+        snprintf(result->detail, sizeof(result->detail), "%s",
+                 "Ring buffer (BPF_MAP_TYPE_RINGBUF) requires kernel >= 5.8.");
+        return 0;
     }
 
     fprintf(stderr, "Running buffer skeleton test %s\n", result->command);
@@ -1407,7 +1439,7 @@ static int execute_arena_test(const aggregate_state_t *state, const aggregate_te
 static int netdata_core_arena_supported(void)
 {
 #if MY_LINUX_VERSION_CODE >= 396544
-    return 1;
+    return netdata_core_kernel_at_least(396544);
 #else
     return 0;
 #endif
@@ -1663,6 +1695,9 @@ int main(int argc, char **argv)
     }
     if (state.all_selected && (state.buffer_mode || state.arena_mode))
         state.selection_mask |= SELECT_STREAM_SYNC_FAMILIES;
+
+    if (state.buffer_mode || state.arena_mode)
+        netdata_core_raise_memlock();
 
     if (log_path) {
         report = fopen(log_path, "w");

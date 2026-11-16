@@ -4,7 +4,10 @@ package main
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdio.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -16,6 +19,29 @@ package main
 static void netdata_disable_libbpf_memlock_rlim(void)
 {
 	libbpf_set_memlock_rlim(0);
+}
+
+// Kernels before 5.11 charge BPF maps to RLIMIT_MEMLOCK, and libbpf's automatic
+// bump is disabled above; the classic entrypoints raise it the same way.
+static void netdata_core_raise_memlock(void)
+{
+	struct rlimit r = { RLIM_INFINITY, RLIM_INFINITY };
+
+	if (setrlimit(RLIMIT_MEMLOCK, &r))
+		fprintf(stderr, "Cannot raise RLIMIT_MEMLOCK: %s\n", strerror(errno));
+}
+
+// The tester may run on an older kernel than the one it was built on.
+static int netdata_core_kernel_at_least(unsigned int code)
+{
+	struct utsname u;
+	unsigned int major = 0, minor = 0, patch = 0;
+
+	if (uname(&u) || sscanf(u.release, "%u.%u.%u", &major, &minor, &patch) < 2)
+		return 1;
+	if (patch > 255)
+		patch = 255;
+	return ((major << 16) | (minor << 8) | patch) >= code;
 }
 
 // BPF_MAP_TYPE_RINGBUF requires kernel >= 5.8 (version code 329728).
@@ -1054,7 +1080,7 @@ static int netdata_core_run_arena_skel_test(const char *name, const char *ctrl_n
 static int netdata_core_arena_supported(void)
 {
 #if MY_LINUX_VERSION_CODE >= 396544
-	return 1;
+	return netdata_core_kernel_at_least(396544);
 #else
 	return 0;
 #endif
@@ -1091,7 +1117,7 @@ static int netdata_core_arena_supported(void)
 static int netdata_core_ringbuf_supported(void)
 {
 #if MY_LINUX_VERSION_CODE >= 329728
-	return 1;
+	return netdata_core_kernel_at_least(329728);
 #else
 	return 0;
 #endif
@@ -1822,6 +1848,10 @@ func main() {
 	if showHelp {
 		printHelp(os.Stdout, os.Args[0])
 		return
+	}
+
+	if state.bufferMode || state.arenaMode {
+		C.netdata_core_raise_memlock()
 	}
 
 	report := io.Writer(os.Stdout)
